@@ -1,0 +1,9 @@
+hydra-core
+lxml
+pybullet
+pygame
+pyquaternion
+setuptools==59.5.0
+tensorboard
+termcolor
+transformations

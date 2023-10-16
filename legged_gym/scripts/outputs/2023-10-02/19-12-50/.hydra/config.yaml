@@ -1,0 +1,53 @@
+checkpoint_root: experiment_logs
+checkpoint: -1
+export_policy: true
+use_real_robot: false
+get_commands_from_joystick: true
+record_frames: false
+video_name: pybullet
+episode_length_s: 20.0
+device: cpu
+deployment:
+  use_real_robot: ${use_real_robot}
+  get_commands_from_joystick: ${get_commands_from_joystick}
+  action_repeat: 10
+  timestep: 0.001
+  reset_time_s: 3.0
+  num_solver_iterations: 9
+  init_position:
+  - 0.0
+  - 0.0
+  - 0.32
+  init_rack_position:
+  - 0.0
+  - 0.0
+  - 1.0
+  init_joint_angles:
+    1_FR_hip_joint: 0.0
+    1_FR_thigh_joint: 0.9
+    1_FR_calf_joint: -1.8
+    2_FL_hip_joint: 0.0
+    2_FL_thigh_joint: 0.9
+    2_FL_calf_joint: -1.8
+    3_RR_hip_joint: 0.0
+    3_RR_thigh_joint: 0.9
+    3_RR_calf_joint: -1.8
+    4_RL_hip_joint: 0.0
+    4_RL_thigh_joint: 0.9
+    4_RL_calf_joint: -1.8
+  stiffness:
+    joint: 50.0
+  damping:
+    joint: 0.5
+  action_scale: 1.0
+  on_rack: false
+  render:
+    show_gui: '${not: ${use_real_robot}}'
+    camera_dist: 1.0
+    camera_yaw: 30.0
+    camera_pitch: -30.0
+    render_width: 480
+    render_height: 360
+    fix_camera_yaw: true
+task: ???
+train: ???
