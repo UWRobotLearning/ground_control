@@ -24,7 +24,6 @@ class RobotInterface {
   void SendCommand(std::array<float, 60> motorcmd);
   void SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
                        float bodyHeight, int mode);
-  void Brake();
   void Initialize();
 
   UDP udp;
@@ -52,14 +51,6 @@ void RobotInterface::SendCommand(std::array<float, 60> motorcmd) {
     low_cmd.motorCmd[motor_id].tau = motorcmd[motor_id * 5 + 4];
   }
   safe.PositionLimit(low_cmd);
-  udp.SetSend(low_cmd);
-  udp.Send();
-}
-
-void RobotInterface::Brake() {
-  for (int motor_id = 0; motor_id < 12; motor_id++) {
-    low_cmd.motorCmd[motor_id].mode = 0x00;  // Electronic braking mode.
-  }
   udp.SetSend(low_cmd);
   udp.Send();
 }
@@ -235,8 +226,7 @@ PYBIND11_MODULE(robot_interface, m) {
       .def("receive_observation", &RobotInterface::ReceiveObservation)
       .def("send_command", &RobotInterface::SendCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)
-      .def("send_high_command", &RobotInterface::SendHighCommand)
-      .def("brake", &RobotInterface::Brake);
+      .def("send_high_command", &RobotInterface::SendHighCommand);
 
 #ifdef VERSION_INFO
   m.attr("__version__") = VERSION_INFO;
