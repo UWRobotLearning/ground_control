@@ -1,4 +1,3 @@
-from legged_gym import LEGGED_GYM_ROOT_DIR
 from typing import Tuple
 import numpy as np
 import os
@@ -10,10 +9,10 @@ from isaacgym import gymtorch, gymapi, gymutil
 
 import torch
 
-from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base_task import BaseTask
 from legged_gym.utils.gamepad import Gamepad
 from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.helpers import parse_path
 from legged_gym.utils.legmath import quat_apply_yaw, wrap_to_pi
 import legged_gym.utils.kinematics.urdf as pk
 from configs.definitions import (EnvOrDictConfig, ObservationOrDictConfig, TerrainOrDictConfig,
@@ -115,9 +114,7 @@ class A1(BaseTask):
         for ee_name in ["1_FR_foot", "2_FL_foot", "3_RR_foot", "4_RL_foot"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
-                    open(self.asset_cfg.file.format(
-                            LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)).read(),
-                                ee_name).to(device=self.device))
+                    open(self.asset_path).read(), ee_name).to(device=self.device))
 
         self._get_commands_from_joystick = self.observation_cfg.get_commands_from_joystick
         if self._get_commands_from_joystick:
@@ -966,9 +963,9 @@ class A1(BaseTask):
                 2.3 create actor with these properties and add them to the env
              3. Store indices of different bodies of the robot
         """
-        asset_path = self.asset_cfg.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        asset_root = os.path.dirname(asset_path)
-        asset_file = os.path.basename(asset_path)
+        self.asset_path = parse_path(self.asset_cfg.file)
+        asset_root = os.path.dirname(self.asset_path)
+        asset_file = os.path.basename(self.asset_path)
 
         asset_options = gymapi.AssetOptions()
         asset_options.default_dof_drive_mode = self.asset_cfg.default_dof_drive_mode

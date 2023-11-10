@@ -1,3 +1,5 @@
+from legged_gym import LEGGED_GYM_ROOT_DIR
+
 import os
 import copy
 import torch
@@ -24,7 +26,15 @@ def set_seed(seed, torch_deterministic=False):
 
     return seed
 
+def parse_path(path):
+    path = os.path.expanduser(path)
+    if os.path.isabs(path):
+       return path
+    return os.path.join(LEGGED_GYM_ROOT_DIR, path)
+
+
 def get_load_path(root, checkpoint=-1):
+    root = parse_path(root)
     if checkpoint == -1:
         models = [file for file in os.listdir(root) if "model" in file]
         models.sort(key=lambda m: '{0:0>15}'.format(m))
@@ -36,10 +46,12 @@ def get_load_path(root, checkpoint=-1):
     return load_path
 
 def get_latest_experiment_path(root: str) -> str:
+    root = parse_path(root)
     latest_config_filepath = max(Path(root).rglob("resolved_config.yaml"), key=lambda f: f.stat().st_ctime)
     return latest_config_filepath.parent.as_posix()
 
 def export_policy_as_jit(actor_critic, path):
+    path = parse_path(path)
     if hasattr(actor_critic, 'memory_a'):
         # assumes LSTM: TODO add GRU
         exporter = PolicyExporterLSTM(actor_critic)
@@ -74,6 +86,7 @@ class PolicyExporterLSTM(torch.nn.Module):
         self.cell_state[:] = 0.
 
     def export(self, path):
+        path = parse_path(path)
         os.makedirs(path, exist_ok=True)
         path = os.path.join(path, 'policy_lstm_1.pt')
         self.to('cpu')

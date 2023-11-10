@@ -111,7 +111,7 @@ class ControlConfig:
 
 @dataclass
 class AssetConfig:
-    file: str = "{LEGGED_GYM_ROOT_DIR}/resources/a1.urdf"
+    file: str = "resources/a1.urdf"
     foot_name: str = "foot" # name of the feet bodies, used to index body state and contact force tensors
     penalize_contacts_on: Tuple[str, ...] = ("thigh", "calf")
     terminate_after_contacts_on: Tuple[str, ...] = ("base",)
