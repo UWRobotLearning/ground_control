@@ -2,26 +2,25 @@ import numpy as np
 import torch
 
 from isaacgym import gymtorch
-from isaacgym.torch_utils import normalize, quat_mul, quat_conjugate, quat_rotate, quat_rotate_inverse
+from isaacgym.torch_utils import quat_rotate
 from legged_gym.envs.a1 import A1
-from legged_gym.utils.legmath import angle_axis_from_quat, wrap_to_pi
 from rsl_rl.datasets.motion_loader import MocapLoader
 
-from configs.definitions import (TerrainOrDictConfig, CommandsOrDictConfig, InitStateOrDictConfig,
-                                 ControlOrDictConfig, AssetOrDictConfig, DomainRandOrDictConfig,
-                                 RewardsOrDictConfig, NormalizationOrDictConfig, NoiseOrDictConfig,
-                                 ViewerOrDictConfig, SimOrDictConfig)
-from configs.overrides.amp import AMPEnvOrDictConfig, AMPObservationOrDictConfig
+from configs.definitions import (TerrainConfig, CommandsConfig, InitStateConfig,
+                                 ControlConfig, AssetConfig, DomainRandConfig,
+                                 RewardsConfig, NormalizationConfig, NoiseConfig,
+                                 ViewerConfig, SimConfig)
+from configs.overrides.amp import AMPEnvConfig, AMPObservationConfig
 
 class A1AMP(A1):
-    env_cfg: AMPEnvOrDictConfig
-    observation_cfg: AMPObservationOrDictConfig
+    env_cfg: AMPEnvConfig
+    observation_cfg: AMPObservationConfig
 
-    def __init__(self, env: AMPEnvOrDictConfig, observation: AMPObservationOrDictConfig,
-                 terrain: TerrainOrDictConfig, commands: CommandsOrDictConfig, init_state: InitStateOrDictConfig,
-                 control: ControlOrDictConfig, asset: AssetOrDictConfig, domain_rand: DomainRandOrDictConfig,
-                 rewards: RewardsOrDictConfig, normalization: NormalizationOrDictConfig, noise: NoiseOrDictConfig,
-                 viewer: ViewerOrDictConfig, sim: SimOrDictConfig):
+    def __init__(self, env: AMPEnvConfig, observation: AMPObservationConfig,
+                 terrain: TerrainConfig, commands: CommandsConfig, init_state: InitStateConfig,
+                 control: ControlConfig, asset: AssetConfig, domain_rand: DomainRandConfig,
+                 rewards: RewardsConfig, normalization: NormalizationConfig, noise: NoiseConfig,
+                 viewer: ViewerConfig, sim: SimConfig):
         super().__init__(env, observation, terrain, commands, init_state, control, asset, domain_rand,
                          rewards, normalization, noise, viewer, sim)
         self.amp_loader = MocapLoader(

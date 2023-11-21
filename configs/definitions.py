@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, Union
-from omegaconf import OmegaConf, DictConfig
+from typing import Any, Dict, Optional, Tuple
+from omegaconf import OmegaConf
 import numpy as np
+
+from legged_gym.utils.helpers import from_repo_root
 
 INIT_JOINT_ANGLES = {
     "1_FR_hip_joint": 0.,
@@ -26,17 +28,17 @@ INIT_JOINT_ANGLES = {
 
 @dataclass
 class EnvConfig:
-    num_envs: int = 4096 # number of envs
+    num_envs: int = "${oc.select: num_envs,4096}" # number of envs, obtained from top-level, defaults to 4096
     env_spacing: float = 3. # not used with heightfields/trimeshes
     send_timeouts: bool = True # send out time information to the algorithm
     episode_length_s: float = 20. # episode length in seconds
 
 @dataclass
 class ObservationConfig:
-    get_commands_from_joystick: bool = False # whether to get velocity commands from joystick
+    get_commands_from_joystick: bool = "${oc.select: get_commands_from_joystick,False}" # whether to get velocity commands from joystick
     history_steps: int = 1 # number of steps of history to include in policy observation
-    sensors: Tuple[str] = ("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action")
-    critic_privileged_sensors: Tuple[str] = ("base_lin_vel", "base_ang_vel", "terrain_height")
+    sensors: Tuple[str, ...] = ("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action")
+    critic_privileged_sensors: Tuple[str, ...] = ("base_lin_vel", "base_ang_vel", "terrain_height")
     fast_compute_foot_pos: bool = True # if True, about 12x faster with a foot position error of 1e-5 meters
 
 @dataclass
@@ -83,7 +85,7 @@ class CommandsConfig:
 @dataclass
 class InitStateConfig:
     pos: Tuple[float, float, float] = (0., 0., 0.32) # x, y, z [m]
-    rot: Tuple[float, float, float] = (0., 0., 0., 1.) # x, y, z, w [quat]
+    rot: Tuple[float, float, float, float] = (0., 0., 0., 1.) # x, y, z, w [quat]
     lin_vel: Tuple[float, float, float] = (0., 0., 0.) # x, y, z [m/s]
     ang_vel: Tuple[float, float, float] = (0., 0., 0.) # x, y, z [rad/s]
     pos_noise: float = 1.
@@ -109,9 +111,12 @@ class ControlConfig:
     # number of control action updates @ sim dt per policy dt
     decimation: int = 4
 
+# registering resolver for adding the repository root (ground_control) to local paths
+OmegaConf.register_new_resolver("from_repo_root", from_repo_root)
+
 @dataclass
 class AssetConfig:
-    file: str = "resources/a1.urdf"
+    file: str = "${from_repo_root: resources/a1.urdf}"
     foot_name: str = "foot" # name of the feet bodies, used to index body state and contact force tensors
     penalize_contacts_on: Tuple[str, ...] = ("thigh", "calf")
     terminate_after_contacts_on: Tuple[str, ...] = ("base",)
@@ -227,21 +232,25 @@ class ViewerConfig:
     lookat: Tuple[float, float, float] = (11., 5., 3.) # [m]
     debug_viz: bool = False
 
+# resolving functions
+OmegaConf.register_new_resolver("evaluate_max_gpu_contact_pairs", lambda num_envs: 2**23 if num_envs < 8000 else 2**24)
+OmegaConf.register_new_resolver("evaluate_use_gpu", lambda device: device.startswith('cuda'))
+
 @dataclass
 class SimConfig:
-    device: str = "cuda:0"
-    headless: bool = False
+    device: str = "${oc.select: sim_device,cuda:0}"
+    headless: bool = "${oc.select: headless,False}"
     dt: float = 0.005
     substeps: int = 1
     gravity: Tuple[float, float, float] = (0., 0., -9.81) # [m/s^2]
     up_axis: int = 1 # 0 is y, 1 is z
-    use_gpu_pipeline: bool = True 
+    use_gpu_pipeline: bool = "${evaluate_use_gpu: ${task.sim.device}}"
 
     @dataclass
     class PhysxConfig:
         num_threads: int = 10
         solver_type: int = 1 # 0: pdgs, 1: tgs
-        use_gpu: bool = True
+        use_gpu: bool = "${evaluate_use_gpu: ${task.sim.device}}"
         num_subscenes: int = 0
         num_position_iterations: int = 4
         num_velocity_iterations: int = 0
@@ -251,12 +260,13 @@ class SimConfig:
         max_depenetration_velocity: float = 1. # [m/s]
         default_buffer_size_multiplier: int = 5
         contact_collection: int = 2 # 0: never, 1: last substep, 2: all substeps
-        max_gpu_contact_pairs: int = 8388608 
+        max_gpu_contact_pairs: int = "${evaluate_max_gpu_contact_pairs: ${task.env.num_envs}}"
     physx: PhysxConfig = PhysxConfig()
 
 
 @dataclass
 class TaskConfig:
+    _target_: str = "legged_gym.envs.a1.A1"
     env: EnvConfig = EnvConfig()
     observation: ObservationConfig = ObservationConfig()
     terrain: TerrainConfig = TerrainConfig()
@@ -271,11 +281,11 @@ class TaskConfig:
     viewer: ViewerConfig = ViewerConfig()
     sim: SimConfig = SimConfig()
 
-
 ### ======================= Train Configs =============================
 
 @dataclass
 class PolicyConfig:
+    _target_: str = "rsl_rl.modules.ActorCritic"
     init_noise_std: float = 0.25
     fixed_std: bool = False
     ortho_init: bool = True
@@ -286,6 +296,7 @@ class PolicyConfig:
 
 @dataclass
 class AlgorithmConfig:
+    _target_: str = "rsl_rl.algorithms.PPO"
     value_loss_coef: float = 1.
     use_clipped_value_loss: bool = False
     clip_param: float = 0.2
@@ -304,7 +315,7 @@ class AlgorithmConfig:
 @dataclass
 class RunnerConfig:
     num_steps_per_env: int = 24 # per iteration
-    iterations: int = 5000 # number of policy updates
+    iterations: int = "${oc.select: iterations,1500}" # number of policy updates
 
     # logging
     save_interval: int = 50 # check for potential saves every this many iterations
@@ -316,12 +327,15 @@ class RunnerConfig:
 
 @dataclass
 class TrainConfig:
+    _target_: str = "rsl_rl.runners.OnPolicyRunner"
     policy: PolicyConfig = PolicyConfig()
     algorithm: AlgorithmConfig = AlgorithmConfig()
     runner: RunnerConfig = RunnerConfig()
 
-    device: str = "cuda:0" 
-    log_dir: str = "experiment_logs" 
+    device: str = "${oc.select: rl_device,cuda:0}" 
+    # Checks if the top-level config has a field "logging_dir", use that if available, use "../experiment_logs". 
+    # Turns the resulting logging directory to an absolute path by prepending the repository root (path to ground_control).
+    log_dir: str = "${from_repo_root: ${oc.select: logging_dir,../experiment_logs}}"
 
 
 @dataclass
@@ -351,23 +365,3 @@ class DeploymentConfig:
         fix_camera_yaw: bool = True
 
     render: RenderConfig = RenderConfig()
-
-# Aliases
-EnvOrDictConfig = Union[EnvConfig, DictConfig]
-ObservationOrDictConfig = Union[ObservationConfig, DictConfig]
-TerrainOrDictConfig = Union[TerrainConfig, DictConfig]
-CommandsOrDictConfig = Union[CommandsConfig, DictConfig]
-InitStateOrDictConfig = Union[InitStateConfig, DictConfig]
-ControlOrDictConfig = Union[ControlConfig, DictConfig]
-AssetOrDictConfig = Union[AssetConfig, DictConfig]
-DomainRandOrDictConfig = Union[DomainRandConfig, DictConfig]
-RewardsOrDictConfig = Union[RewardsConfig, DictConfig]
-NormalizationOrDictConfig = Union[NormalizationConfig, DictConfig]
-NoiseOrDictConfig = Union[NoiseConfig, DictConfig]
-ViewerOrDictConfig = Union[ViewerConfig, DictConfig]
-SimOrDictConfig = Union[SimConfig, DictConfig]
-PolicyOrDictConfig = Union[PolicyConfig, DictConfig]
-AlgorithmOrDictConfig = Union[AlgorithmConfig, DictConfig]
-RunnerOrDictConfig = Union[RunnerConfig, DictConfig]
-TrainOrDictConfig = Union[TrainConfig, DictConfig]
-DeploymentOrDictConfig = Union[DeploymentConfig, DictConfig]

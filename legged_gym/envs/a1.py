@@ -12,14 +12,13 @@ import torch
 from legged_gym.envs.base_task import BaseTask
 from legged_gym.utils.gamepad import Gamepad
 from legged_gym.utils.terrain import Terrain
-from legged_gym.utils.helpers import parse_path
 from legged_gym.utils.legmath import quat_apply_yaw, wrap_to_pi
 import legged_gym.utils.kinematics.urdf as pk
-from configs.definitions import (EnvOrDictConfig, ObservationOrDictConfig, TerrainOrDictConfig,
-                                 CommandsOrDictConfig, InitStateOrDictConfig, ControlOrDictConfig,
-                                 AssetOrDictConfig, DomainRandOrDictConfig, RewardsOrDictConfig,
-                                 NormalizationOrDictConfig, NoiseOrDictConfig, ViewerOrDictConfig,
-                                 SimOrDictConfig)
+from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig,
+                                 CommandsConfig, InitStateConfig, ControlConfig,
+                                 AssetConfig, DomainRandConfig, RewardsConfig,
+                                 NormalizationConfig, NoiseConfig, ViewerConfig,
+                                 SimConfig)
 log = logging.getLogger(__name__)
 
 # TODO: generate from URDF?
@@ -94,11 +93,11 @@ DIAGNOSTICS_LOG_NAMES = dict(
 )
 
 class A1(BaseTask):
-    def __init__(self, env: EnvOrDictConfig, observation: ObservationOrDictConfig, terrain: TerrainOrDictConfig,
-                 commands: CommandsOrDictConfig, init_state: InitStateOrDictConfig, control: ControlOrDictConfig,
-                 asset: AssetOrDictConfig, domain_rand: DomainRandOrDictConfig, rewards: RewardsOrDictConfig,
-                 normalization: NormalizationOrDictConfig, noise: NoiseOrDictConfig, viewer: ViewerOrDictConfig,
-                 sim: SimOrDictConfig):
+    def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
+                 commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
+                 asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
+                 normalization: NormalizationConfig, noise: NoiseConfig, viewer: ViewerConfig,
+                 sim: SimConfig):
         """ Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
             initilizes PyTorch buffers used during training
@@ -114,7 +113,7 @@ class A1(BaseTask):
         for ee_name in ["1_FR_foot", "2_FL_foot", "3_RR_foot", "4_RL_foot"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
-                    open(self.asset_path).read(), ee_name).to(device=self.device))
+                    open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
 
         self._get_commands_from_joystick = self.observation_cfg.get_commands_from_joystick
         if self._get_commands_from_joystick:
@@ -963,9 +962,8 @@ class A1(BaseTask):
                 2.3 create actor with these properties and add them to the env
              3. Store indices of different bodies of the robot
         """
-        self.asset_path = parse_path(self.asset_cfg.file)
-        asset_root = os.path.dirname(self.asset_path)
-        asset_file = os.path.basename(self.asset_path)
+        asset_root = os.path.dirname(self.asset_cfg.file)
+        asset_file = os.path.basename(self.asset_cfg.file)
 
         asset_options = gymapi.AssetOptions()
         asset_options.default_dof_drive_mode = self.asset_cfg.default_dof_drive_mode

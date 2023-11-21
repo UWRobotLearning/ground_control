@@ -1,8 +1,9 @@
 from typing import Tuple
 from dataclasses import dataclass
 from configs.definitions import EnvConfig, RewardsConfig, SimConfig, TaskConfig
+from legged_gym.utils.helpers import from_repo_root
 
-MOTION_FILES = ("datasets/mocap_motions_a1/trot2.txt",)
+MOTION_FILES = (from_repo_root("datasets/mocap_motions_a1/trot2.txt"),)
 
 @dataclass
 class MocapEnvConfig(EnvConfig):

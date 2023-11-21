@@ -6,9 +6,8 @@ import hydra
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from configs.definitions import PolicyOrDictConfig
-from configs.overrides.amp import (AMPAlgorithmConfig, AMPRunnerConfig,
-                                   AMPAlgorithmOrDictConfig, AMPRunnerOrDictConfig)
+from configs.definitions import PolicyConfig
+from configs.overrides.amp import (AMPAlgorithmConfig, AMPRunnerConfig)
 
 from legged_gym.envs.a1_amp import A1AMP
 from rsl_rl.algorithms import AMPPPO
@@ -26,9 +25,9 @@ class AMPOnPolicyRunner(OnPolicyRunner):
 
     def __init__(self,
         env: A1AMP,
-        policy: PolicyOrDictConfig,
-        algorithm: AMPAlgorithmOrDictConfig,
-        runner: AMPRunnerOrDictConfig,
+        policy: PolicyConfig,
+        algorithm: AMPAlgorithmConfig,
+        runner: AMPRunnerConfig,
         log_dir: str,
         device: str
     ):

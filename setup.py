@@ -34,7 +34,8 @@ setup(
 					'tqdm',
 					'torch',
 					'torchvision',
-					'torchaudio'
+					'torchaudio',
+					'pydantic'
 					],
 		extras_require={
 			"deploy": [local_dep('robot_deployment')]

@@ -1,14 +1,14 @@
 import glob
 import numpy as np
-from typing import Tuple, Union
-from omegaconf import DictConfig
+from typing import Tuple
 from dataclasses import dataclass
 from configs.definitions import (EnvConfig, ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
                                  RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig)
 from configs.overrides.terrain import FlatTerrainConfig
+from legged_gym.utils.helpers import from_repo_root
 
-MOTION_FILES = tuple(glob.glob("datasets/mocap_motions_a1/*"))
+MOTION_FILES = tuple(glob.glob(from_repo_root("datasets/mocap_motions_a1/*")))
 
 #########
 # Task
@@ -21,14 +21,14 @@ class AMPEnvConfig(EnvConfig):
 
 @dataclass
 class AMPObservationConfig(ObservationConfig):
-    amp_sensors: Tuple[str] = ("motor_pos_unshifted", "foot_pos", "base_lin_vel", "base_ang_vel",
+    amp_sensors: Tuple[str, ...] = ("motor_pos_unshifted", "foot_pos", "base_lin_vel", "base_ang_vel",
                                "motor_vel", "z_pos")
 
 @dataclass
 class AMPTaskConfig(TaskConfig):
     _target_: str = "legged_gym.envs.a1_amp.A1AMP"
     env: AMPEnvConfig = AMPEnvConfig(
-        num_envs="${resolve_default_int: 5480, ${num_envs}}"
+        num_envs="${oc.select: num_envs,5480}"
     )
     observation: AMPObservationConfig = AMPObservationConfig(
         critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "friction", "base_mass", "p_gain", "d_gain")
@@ -135,15 +135,5 @@ class AMPTrainConfig(TrainConfig):
     _target_: str = "rsl_rl.runners.AMPOnPolicyRunner"
     algorithm: AMPAlgorithmConfig = AMPAlgorithmConfig()
     runner: AMPRunnerConfig = AMPRunnerConfig(
-        iterations="${resolve_default_int: 50_000, ${iterations}}"
+        iterations="${oc.select: iterations,50_000}"
     )
-
-
-# Aliases
-AMPEnvOrDictConfig = Union[AMPEnvConfig, DictConfig]
-AMPObservationOrDictConfig = Union[AMPObservationConfig, DictConfig]
-AMPTaskOrDictConfig = Union[AMPTaskConfig, DictConfig]
-AMPMimicOrDictConfig = Union[AMPMimicTaskConfig, DictConfig]
-AMPAlgorithmOrDictConfig = Union[AMPAlgorithmConfig, DictConfig]
-AMPRunnerOrDictConfig = Union[AMPRunnerConfig, DictConfig]
-AMPTrainOrDictConfig = Union[AMPTrainConfig, DictConfig]

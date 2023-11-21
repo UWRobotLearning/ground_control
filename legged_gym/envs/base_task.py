@@ -3,18 +3,13 @@ from isaacgym import gymapi
 from isaacgym import gymutil
 import torch
 from typing import Dict
-from dataclasses import asdict
 from omegaconf import OmegaConf
 
 from legged_gym.utils import observation_buffer
 from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig, CommandsConfig,
                                  InitStateConfig, ControlConfig, AssetConfig, DomainRandConfig,
                                  RewardsConfig, NormalizationConfig, NoiseConfig, ViewerConfig,
-                                 SimConfig, EnvOrDictConfig, ObservationOrDictConfig,
-                                 TerrainOrDictConfig, CommandsOrDictConfig, InitStateOrDictConfig,
-                                 ControlOrDictConfig, AssetOrDictConfig, DomainRandOrDictConfig,
-                                 RewardsOrDictConfig, NormalizationOrDictConfig, NoiseOrDictConfig,
-                                 ViewerOrDictConfig, SimOrDictConfig)
+                                 SimConfig)
 
 
 # Base class for RL tasks
@@ -34,11 +29,11 @@ class BaseTask:
     sim_cfg: SimConfig
     sensor_dims: Dict[str, int]
 
-    def __init__(self, env: EnvOrDictConfig, observation: ObservationOrDictConfig, terrain: TerrainOrDictConfig,
-                 commands: CommandsOrDictConfig, init_state: InitStateOrDictConfig, control: ControlOrDictConfig,
-                 asset: AssetOrDictConfig, domain_rand: DomainRandOrDictConfig, rewards: RewardsOrDictConfig,
-                 normalization: NormalizationOrDictConfig, noise: NoiseOrDictConfig, viewer: ViewerOrDictConfig,
-                 sim: SimOrDictConfig):
+    def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
+                 commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
+                 asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
+                 normalization: NormalizationConfig, noise: NoiseConfig, viewer: ViewerConfig,
+                 sim: SimConfig):
         #TODO: remove this boilerplate
         resolve = lambda cfg, cfg_type: cfg if isinstance(cfg, cfg_type) else OmegaConf.create(cfg)
         self.env_cfg = resolve(env, EnvConfig)

@@ -1,12 +1,10 @@
-import glob
 import numpy as np
-from typing import Tuple, Union
-from omegaconf import DictConfig
+from typing import Tuple
 from dataclasses import dataclass
-from configs.definitions import (EnvConfig, ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
+from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
                                  RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig)
-from configs.overrides.terrain import TrimeshTerrainConfig, FlatTerrainConfig
+from configs.overrides.terrain import FlatTerrainConfig
 from configs.overrides.rewards import LeggedGymRewardsConfig
 
 #########

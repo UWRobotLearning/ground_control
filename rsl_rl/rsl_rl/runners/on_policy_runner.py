@@ -9,8 +9,7 @@ from omegaconf import OmegaConf
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from configs.definitions import (PolicyConfig, AlgorithmConfig, RunnerConfig,
-                                 PolicyOrDictConfig, AlgorithmOrDictConfig, RunnerOrDictConfig)
+from configs.definitions import (PolicyConfig, AlgorithmConfig, RunnerConfig)
 
 from legged_gym.envs.a1 import A1
 from rsl_rl.algorithms.ppo import PPO, Metrics
@@ -26,9 +25,9 @@ class OnPolicyRunner:
     def __init__(
         self,
         env: A1,
-        policy: PolicyOrDictConfig,
-        algorithm: AlgorithmOrDictConfig,
-        runner: RunnerOrDictConfig,
+        policy: PolicyConfig,
+        algorithm: AlgorithmConfig,
+        runner: RunnerConfig,
         log_dir: str,
         device: str
     ):

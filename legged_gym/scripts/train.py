@@ -8,16 +8,16 @@ from typing import Any, Tuple
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
+from pydantic import TypeAdapter
 
-#from configs.definitions import TaskConfig
-from configs.hydra import HydraTaskConfig
-from configs.hydra import HydraLocomotionTaskConfig
-from configs.hydra import HydraTrainConfig
+from configs.definitions import TaskConfig, TrainConfig
+from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1
 from rsl_rl.runners import OnPolicyRunner
-from legged_gym.utils.helpers import set_seed, get_load_path, get_latest_experiment_path
+from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_config_as_pkl, save_config_as_yaml,
+                                      from_repo_root)
 
 @dataclass
 class TrainScriptConfig:
@@ -34,14 +34,12 @@ class TrainScriptConfig:
     rl_device: str = "cuda:0"
     headless: bool = False
     checkpoint_root: str = ""
-    logging_root: str = "experiment_logs"
+    logging_root: str = from_repo_root("../experiment_logs")
 
-    task: HydraTaskConfig = HydraLocomotionTaskConfig()
-    train: HydraTrainConfig = HydraTrainConfig()
+    task: TaskConfig = LocomotionTaskConfig()
+    train: TrainConfig = TrainConfig()
 
-    hydra: ExperimentHydraConfig = ExperimentHydraConfig(
-        root_dir_name="${logging_root}",
-    )
+    hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=TrainScriptConfig)
@@ -51,12 +49,12 @@ def main(cfg: TrainScriptConfig) -> None:
 
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
+    # Type-checking (and other validation if defined) via Pydantic
+    cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
+    OmegaConf.resolve(OmegaConf.create(cfg))
     print(OmegaConf.to_yaml(cfg))
-    with open(f"{cfg.train.log_dir}/resolved_config.yaml", "w") as config_file:
-        OmegaConf.save(cfg, config_file)
-    with open(f"{cfg.train.log_dir}/resolved_config.pkl", "wb") as config_pkl:
-        pickle.dump(cfg, config_pkl)
-        config_pkl.flush()
+    save_config_as_yaml(cfg)
+    save_config_as_pkl(cfg)
 
     log.info("2. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
