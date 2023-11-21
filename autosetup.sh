@@ -24,6 +24,9 @@ else
     cd ../../ground_control
 fi
 
+# Run setup.py to install everything else needed for this package.
+pip install -e .
+
 # If not already installed, install Boost, LCM and CMake,
 # needed for building Unitree's SDK interface
 sudo apt install -y libboost-all-dev liblcm-dev cmake
@@ -41,5 +44,3 @@ make
 mv robot_interface* ../../..
 cd ../../../..
 
-# Run setup.py to install everything else needed for this package.
-pip install -e .
