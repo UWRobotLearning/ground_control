@@ -13,19 +13,18 @@ OmegaConf.register_new_resolver("get_script_name", get_script_name)
 
 @dataclass
 class ExperimentHydraConfig(HydraConf):
-    root_dir_name: str = "${from_repo_root: ${oc.select: logging_root,../experiment_logs}}"
-    load_dir_name: str = "${hydra:root_dir_name}/train"
+    root_dir_name: str = "${from_repo_root: ${oc.select: logging_root,../experiment_logs}}/${get_script_name:}"
     new_override_dirname: str = "${slash_to_dot: ${hydra:job.override_dirname}}"
     run: Dict = field(default_factory=lambda: {
         # A more sophisticated example:
         #"dir": "${hydra:root_dir_name}/${hydra:new_override_dirname}/seed=${seed}/${now:%Y-%m-%d_%H-%M-%S}",
         # Default behavior logs by date and script name:
-        "dir": "${hydra:root_dir_name}/${get_script_name:}/${now:%Y-%m-%d_%H-%M-%S}",
+        "dir": "${hydra:root_dir_name}/${now:%Y-%m-%d_%H-%M-%S}",
         }
     )
 
     sweep: Dict = field(default_factory=lambda: {
-        "dir": "${hydra:root_dir_name}",
+        "dir": "${..root_dir_name}/multirun/${now:%Y-%m-%d_%H-%M-%S}",
         "subdir": "${hydra:new_override_dirname}",
         }
     )
@@ -39,6 +38,7 @@ class ExperimentHydraConfig(HydraConf):
                     "headless",
                 ]
             }
-        }
+        },
+        "chdir": True
     })
 

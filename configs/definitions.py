@@ -332,10 +332,8 @@ class TrainConfig:
     algorithm: AlgorithmConfig = AlgorithmConfig()
     runner: RunnerConfig = RunnerConfig()
 
-    device: str = "${oc.select: rl_device,cuda:0}" 
-    # Checks if the top-level config has a field "logging_dir", use that if available, use "../experiment_logs". 
-    # Turns the resulting logging directory to an absolute path by prepending the repository root (path to ground_control).
-    log_dir: str = "${from_repo_root: ${oc.select: logging_dir,../experiment_logs}}"
+    device: str = "${oc.select: rl_device,cuda:0}"
+    log_dir: str = "${hydra:runtime.output_dir}"
 
 
 @dataclass

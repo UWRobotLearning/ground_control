@@ -3,6 +3,7 @@ import logging
 import pickle
 from dataclasses import dataclass
 from typing import Any, Tuple
+import os
 
 # hydra / config related imports
 import hydra
@@ -46,12 +47,11 @@ cs.store(name="config", node=TrainScriptConfig)
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: TrainScriptConfig) -> None:
-
+    print(os.getcwd())
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
     # Type-checking (and other validation if defined) via Pydantic
     cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
-    OmegaConf.resolve(OmegaConf.create(cfg))
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
     save_config_as_pkl(cfg)
