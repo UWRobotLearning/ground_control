@@ -41,32 +41,12 @@ class Terrain:
 
     # ============= Terrain Multiplexing ============================
     #TODO: needs to be cleaned up and clearer
-        if hasattr(cfg, 'valley'):
-            #TODO: see whats going on with these options. seems messy
-            # Ege - added new terrain option
-            #self.ready_made_valley_terrain()
-            self.valley_terrain()
-        elif hasattr(cfg, 'plane_slope'):
-            self.slope_terrain(cfg.plane_slope)
-        elif cfg.curriculum:
-            #self.curriculum()
-            #self.ready_made_valley_terrain()  # Ege - added terrain to curriculum setting as well
-            #self.valley_terrain()
-            self.ready_made_semivalley_terrain()
-            # Ege - trying gap terrain
-            '''
-            terrain = terrain_utils.SubTerrain("terrain",
-                                width=self.width_per_env_pixels,
-                                length=self.width_per_env_pixels,
-                                vertical_scale=self.cfg.vertical_scale,
-                                horizontal_scale=self.cfg.horizontal_scale)
-            gap_terrain(terrain, 1)
-            '''
+        if cfg.curriculum:
+            self.curriculum()
         elif cfg.selected:
             self.selected_terrain()
         else:
-            #self.randomized_terrain()
-            self.ready_made_semivalley_terrain()
+            self.randomized_terrain()
 
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":

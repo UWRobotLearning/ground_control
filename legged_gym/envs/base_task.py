@@ -14,42 +14,12 @@ from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig, Co
 
 # Base class for RL tasks
 class BaseTask:
-    env_cfg: EnvConfig
-    observation_cfg: ObservationConfig
-    terrain_cfg: TerrainConfig
-    commands_cfg: CommandsConfig
-    init_state_cfg: InitStateConfig
-    control_cfg: ControlConfig
-    asset_cfg: AssetConfig
-    domain_rand_cfg: DomainRandConfig
-    rewards_cfg: RewardsConfig
-    normalization_cfg: NormalizationConfig
-    noise_cfg: NoiseConfig
-    viewer_cfg: ViewerConfig
-    sim_cfg: SimConfig
     sensor_dims: Dict[str, int]
 
-    def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
-                 commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
-                 asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
-                 normalization: NormalizationConfig, noise: NoiseConfig, viewer: ViewerConfig,
-                 sim: SimConfig):
-        #TODO: remove this boilerplate
-        resolve = lambda cfg, cfg_type: cfg if isinstance(cfg, cfg_type) else OmegaConf.create(cfg)
-        self.env_cfg = resolve(env, EnvConfig)
-        self.observation_cfg = resolve(observation, ObservationConfig)
-        self.terrain_cfg = resolve(terrain, TerrainConfig)
-        self.commands_cfg = resolve(commands, CommandsConfig)
-        self.init_state_cfg = resolve(init_state, InitStateConfig)
-        self.control_cfg = resolve(control, ControlConfig)
-        self.asset_cfg = resolve(asset, AssetConfig)
-        self.domain_rand_cfg = resolve(domain_rand, DomainRandConfig)
-        self.rewards_cfg = resolve(rewards, RewardsConfig)
-        self.normalization_cfg = resolve(normalization, NormalizationConfig)
-        self.noise_cfg = resolve(noise, NoiseConfig)
-        self.viewer_cfg = resolve(viewer, ViewerConfig)
-        self.sim_cfg = resolve(sim, SimConfig)
-
+    def __init__(self, env: EnvConfig, observation: ObservationConfig, sim: SimConfig):
+        self.sim_cfg = sim
+        self.env_cfg = env
+        self.observation_cfg = observation
         self.gym = gymapi.acquire_gym()
 
         self.sim_params = gymapi.SimParams()  # get Isaac-bindings sim_params object which contains default settings

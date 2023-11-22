@@ -32,29 +32,40 @@ def set_seed(seed, torch_deterministic=False):
 
     return seed
 
+# Saves the current config file as yaml. Checks cfg.train.log_dir for the folder to save,
+# and saves it in that folder under the name resolved_config.yaml, trying to resolve all
+# the interpolations (indirect references in the config).
 def save_config_as_yaml(cfg):
-    with open(f"resolved_config.yaml", "w") as config_file:
+    with open(f"{cfg.train.log_dir}/resolved_config.yaml", "w") as config_file:
         OmegaConf.save(cfg, config_file, resolve=True)
 
-def save_config_as_pkl(cfg):
-    with open(f"resolved_config.pkl", "wb") as config_pkl:
+# Saves the current config file (assumed to be already resolved) as pickle (with the extension .pkl). 
+# Checks cfg.train.log_dir for the folder to save, and saves it in that folder under the name resolved_config.pkl.
+def save_resolved_config_as_pkl(cfg):
+    with open(f"{cfg.train.log_dir}/resolved_config.pkl", "wb") as config_pkl:
         pickle.dump(cfg, config_pkl)
         config_pkl.flush()
 
+# Loads a pickle file and returns it from the path specified.
 def load_pkl(path):
     with open(path, "rb") as pkl_file:
         return pickle.load(pkl_file)
 
+# Gets the name of the script that is currently being run (used by Hydra for logging location).
 def get_script_name():
     return Path(__main__.__file__).stem
 
+# If the given path is not absolute (after resolving user parameters), returns an absolute path
+# that is equivalent to the given relative path from the repository root (ground_control).
 def from_repo_root(path):
     path = os.path.expanduser(path)
     if os.path.isabs(path):
         return path
     return os.path.abspath(os.path.join(LEGGED_GYM_ROOT_DIR, path))
 
-def set_fields_as_missing(class_ref: Type):
+# Sets all the fields of a dataclass as OmegaConf.MISSING. Used to specify a config dataclass
+# where fields that are not specified are taken from defaults or an external file.
+def empty_cfg(class_ref: Type):
     args = {key.name: MISSING for key in fields(class_ref)}
     def init(**kwargs):
         args.update(kwargs)

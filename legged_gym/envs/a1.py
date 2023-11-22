@@ -104,9 +104,21 @@ class A1(BaseTask):
 
         Args:
             cfg (Dict): Environment config file
-        """
-        super().__init__(env, observation, terrain, commands, init_state, control, asset, domain_rand,
-                         rewards, normalization, noise, viewer, sim)
+        """ 
+        self.env_cfg = env
+        self.observation_cfg = observation
+        self.terrain_cfg = terrain
+        self.commands_cfg = commands
+        self.init_state_cfg = init_state
+        self.control_cfg = control
+        self.asset_cfg = asset
+        self.domain_rand_cfg = domain_rand
+        self.rewards_cfg = rewards
+        self.normalization_cfg = normalization
+        self.noise_cfg = noise
+        self.viewer_cfg = viewer
+        self.sim_cfg = sim
+        super().__init__(env, observation, sim)
         self.init_done = False
 
         self.chain_ee = []

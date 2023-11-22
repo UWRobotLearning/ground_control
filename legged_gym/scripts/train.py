@@ -17,7 +17,7 @@ from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1
 from rsl_rl.runners import OnPolicyRunner
-from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_config_as_pkl, save_config_as_yaml,
+from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, save_config_as_yaml,
                                       from_repo_root)
 
 @dataclass
@@ -47,14 +47,13 @@ cs.store(name="config", node=TrainScriptConfig)
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: TrainScriptConfig) -> None:
-    print(os.getcwd())
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
     # Type-checking (and other validation if defined) via Pydantic
     cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
-    save_config_as_pkl(cfg)
+    save_resolved_config_as_pkl(cfg)
 
     log.info("2. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
