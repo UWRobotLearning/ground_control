@@ -14,8 +14,11 @@ import pickle # Ege
 from isaacgym import terrain_utils
 from configs.definitions import TerrainConfig
 
-class Terrain:
+
+
+class Terrain():
     def __init__(self, cfg: TerrainConfig, num_robots) -> None:
+
 
         self.cfg = cfg
         self.num_robots = num_robots
@@ -39,15 +42,30 @@ class Terrain:
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
 
+        
+    #Add prefix '_terrain_' to methods that do not return a terrain
+    #Check if the methods are mentioned in the config hasattr
+        # if yes return the attrs getattr
+
+        # if not return
+
     # ============= Terrain Multiplexing ============================
     #TODO: needs to be cleaned up and clearer
         if hasattr(cfg, 'valley'):
             #TODO: see whats going on with these options. seems messy
-            # Ege - added new terrain option
+            # Ege - added new terrain optiongrid_enable: bool = False
+    # @dataclass
+    # class GridConfig:
+    #     num_rows: int = None
+    #     num_cols: int = None
             #self.ready_made_valley_terrain()
+
+            #rohan
             self.valley_terrain()
         elif hasattr(cfg, 'plane_slope'):
             self.slope_terrain(cfg.plane_slope)
+
+        
         elif cfg.curriculum:
             #self.curriculum()
             #self.ready_made_valley_terrain()  # Ege - added terrain to curriculum setting as well
@@ -62,11 +80,17 @@ class Terrain:
                                 horizontal_scale=self.cfg.horizontal_scale)
             gap_terrain(terrain, 1)
             '''
+
         elif cfg.selected:
-            self.selected_terrain()
-        else:
-            #self.randomized_terrain()
-            self.ready_made_semivalley_terrain()
+            self.selected_terrain() 
+            """
+        Need to check for imported terrains and if the file having that exists
+        
+            """
+
+        elif cfg.random:
+            self.randomized_terrain()
+            # self.ready_made_semivalley_terrain()
 
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
@@ -74,6 +98,15 @@ class Terrain:
                                                                                             self.cfg.horizontal_scale,
                                                                                             self.cfg.vertical_scale,
                                                                                             self.cfg.slope_threshold)
+    
+
+
+            
+
+
+
+        
+
     # / ============= Terrain Multiplexing ============================
 
     def randomized_terrain(self):
@@ -177,7 +210,7 @@ class Terrain:
             #terrain.height_field_raw[:,:] = terrain_arrs['heightmap'][start_x:start_x+width, start_y:start_y+width] / self.cfg.vertical_scale
             terrain.height_field_raw[:,:] = heightmaps[j][i][:width,:width] / self.cfg.vertical_scale
             if self.cfg.record_roughness:
-                roughness[i,j] += residual_variance(terrain.height_field_raw[:x_left, :]) / 2 #terrain_roughness_index(terrain.height_field_raw[:x_left, :]) / 2
+                roughness[i,j] += residadd_heightfieldual_variance(terrain.height_field_raw[:x_left, :]) / 2 #terrain_roughness_index(terrain.height_field_raw[:x_left, :]) / 2
                 roughness[i,j] += residual_variance(terrain.height_field_raw[x_right:, :]) / 2 # terrain_roughness_index(terrain.height_field_raw[x_right:, :]) / 2
 
             self.add_terrain_to_map(terrain, i, j)
@@ -360,7 +393,6 @@ def pit_terrain(terrain, depth, platform_size=1.):
     y1 = terrain.width // 2 - platform_size
     y2 = terrain.width // 2 + platform_size
     terrain.height_field_raw[x1:x2, y1:y2] = -depth
-
 
 # ======== Terrain Helper Functions ========
 

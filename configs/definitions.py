@@ -41,7 +41,11 @@ class ObservationConfig:
 
 @dataclass
 class TerrainConfig:
-    mesh_type: str = 'plane' # one of [None, 'plane', 'heightfield', 'trimesh', 'valley']
+    mesh_type: str = 'plane' # one of [None, 'plane', 'heightfield', 'trimesh']
+    grid_enable: bool = False
+    @dataclass
+    class GridConfig:
+        enabled: bool = False
     curriculum: bool = False
     static_friction: float = 1.
     dynamic_friction: float = 1.
@@ -53,6 +57,10 @@ class TerrainConfig:
     selected: bool = False # select a unique terrain type and pass all arguments
     terrain_kwargs: Optional[Dict[str, Any]] = None # dict of arguments for selected terrain
     max_init_terrain_level: Optional[int] = None # starting curriculum state
+    randomTerrain : bool = False
+    @dat
+    realTerrain : bool  = False
+
     terrain_length: Optional[float] = None
     terrain_width: Optional[float] = None
     terrain_noise_magnitude: Optional[float] = None
@@ -62,6 +70,7 @@ class TerrainConfig:
     border_size: Optional[float] = None # [m]
     terrain_proportions: Optional[Tuple[float, float, float, float, float]] = None # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
     slope_threshold: Optional[float] = None # trimesh only; slopes above this threshold will be corrected to vertical surfaces
+
 
 @dataclass
 class CommandsConfig:
