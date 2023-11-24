@@ -69,6 +69,9 @@ def main(cfg: TrainScriptConfig) -> None:
     log.info("3. Now Training")
     runner.learn()
 
+    log.info("4. Exit Cleanly")
+    env.exit()
+
 if __name__ == "__main__":
     log = logging.getLogger(__name__)
     main()

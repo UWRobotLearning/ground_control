@@ -471,6 +471,9 @@ class A1(BaseTask):
         elif mesh_type is not None:
             raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
         self._create_envs()
+    
+    def exit(self):
+        self.gym.destroy_sim(self.sim)
 
     def set_camera(self, position, lookat):
         """ Set camera position and direction

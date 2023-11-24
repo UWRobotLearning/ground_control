@@ -115,6 +115,9 @@ def main(cfg: PlayScriptConfig):
             time.sleep(env.dt - duration)
         current_time = time.time()
 
+    log.info("6. Exit Cleanly")
+    env.exit()
+
 if __name__ == '__main__':
     log = logging.getLogger(__name__)
     main()

@@ -130,6 +130,9 @@ def main(cfg: Config):
             log.warning("Unsafe, terminating!")
             break
 
+    log.info("N. Exit Cleanly")
+    env.exit()
+
 if __name__ == '__main__':
     log = logging.getLogger(__name__)
     main()
