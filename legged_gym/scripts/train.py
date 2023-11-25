@@ -27,6 +27,13 @@ class TrainScriptConfig:
     aliases for commonly used hyperparameters. Feel free to add
     more aliases for your experiments.
     """
+
+    defaults: Tuple[Any] = (
+        "_self_",
+        {"override hydra/launcher": "joblib"},
+        
+    )
+
     seed: int = 1
     torch_deterministic: bool = False
     num_envs: int = 4096 
@@ -53,7 +60,7 @@ def main(cfg: TrainScriptConfig) -> None:
     cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
-    save_resolved_config_as_pkl(cfg)
+    #save_resolved_config_as_pkl(cfg)
 
     log.info("2. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)

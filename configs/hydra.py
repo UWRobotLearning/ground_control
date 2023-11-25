@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict,List,Any
+from typing import Dict,List,Any,Tuple
 from hydra.conf import HydraConf
 from hydra.conf import HelpConf, HydraHelpConf, RuntimeConf
 from hydra._internal.core_plugins.basic_launcher import BasicLauncherConf
@@ -17,19 +17,10 @@ OmegaConf.register_new_resolver("get_script_name", get_script_name)
 
 @dataclass
 class ExperimentHydraConfig(HydraConf):
-    defaults: List[Any] = field(
-        default_factory=lambda: [
-            {"output": "default"},
-            {"launcher": "basic"},
-            {"sweeper": "basic"},
-            {"help": "default"},
-            {"hydra_help": "default"},
-            {"hydra_logging": "default"},
-            {"job_logging": "default"},
-            {"callbacks": None},
-            # env specific overrides
-            {"env": "default"},
-        ]
+    defaults: Tuple[Any] = (
+        #{"launcher": "basic"},
+        {"override hydra/launcher": "joblib"},
+        #{"sweeper": "basic"},
     )
     root_dir_name: str = "${from_repo_root: ${oc.select: logging_root,../experiment_logs}}/${get_script_name:}"
     new_override_dirname: str = "${slash_to_dot: ${hydra:job.override_dirname}}"
@@ -59,6 +50,19 @@ class ExperimentHydraConfig(HydraConf):
         },
         "chdir": True
     })
+
+    # This specifically configures the "joblib" launcher
+    # Note: for now, parallelism is disabled (hence n_jobs=1) due to a blocker related to:
+    # https://github.com/facebookresearch/hydra/discussions/2186 
+    launcher: Dict = field(default_factory=lambda: {
+        "n_jobs": "1",
+        "pre_dispatch": "1*n_jobs",
+    })
+
+    #sweeper: Dict = field(default_factory=lambda: {
+    #    "other": "2",
+    #    "something": "1*n_jobs",
+    #})
 
 # === TODO:====
 # ref this issue: https://github.com/facebookresearch/hydra/issues/1830
