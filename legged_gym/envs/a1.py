@@ -124,7 +124,7 @@ class A1(BaseEnv):
         self.init_done = False
 
         self.chain_ee = []
-        for ee_name in ["1_FR_foot", "2_FL_foot", "3_RR_foot", "4_RL_foot"]:
+        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
                     open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
