@@ -116,7 +116,7 @@ OmegaConf.register_new_resolver("from_repo_root", from_repo_root)
 
 @dataclass
 class AssetConfig:
-    file: str = "${from_repo_root: resources/a1.urdf}"
+    file: str = "${from_repo_root: resources/mushr_description/robots/racecar-mit.urdf}"
     foot_name: str = "foot" # name of the feet bodies, used to index body state and contact force tensors
     penalize_contacts_on: Tuple[str, ...] = ("thigh", "calf")
     terminate_after_contacts_on: Tuple[str, ...] = ("base",)
