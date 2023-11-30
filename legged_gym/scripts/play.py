@@ -73,7 +73,7 @@ def main(cfg: PlayScriptConfig):
     loaded_cfg = OmegaConf.load(latest_config_filepath)
 
     log.info("2. Merging loaded config, defaults and current top-level config.")
-    del(loaded_cfg.hydra)
+    del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
     merged_cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
