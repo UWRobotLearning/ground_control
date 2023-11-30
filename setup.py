@@ -1,8 +1,12 @@
 from setuptools import setup, find_packages
 import os
 
-pkg_root = os.path.dirname(os.path.realpath(__file__))
 
+# This portion allows installing local dependencies (in non-editable mode, meaning
+# the changes made wouldn't be reflected in the project unless the packages are re-installed)
+# This is not recommended, hence it's not used by default.
+# For automatic installation of dependencies, see autosetup.py in the project root.
+pkg_root = os.path.dirname(os.path.realpath(__file__))
 def local_dep(dep_name):
 	return f"{dep_name}@file://localhost{os.path.join(pkg_root, dep_name)}"
 
@@ -16,7 +20,7 @@ setup(
 	description='Isaac Gym environments for ground control',
 	python_requires="==3.8.*",
 	install_requires=['isaacgym',  # needs to be installed manually
-					local_dep('rsl_rl'),
+					'rsl_rl',  #local_dep('rsl_rl'),  # needs to be installed manually
 					'matplotlib',
 					'lxml',
 					'numpy<1.24',
@@ -38,6 +42,6 @@ setup(
 					'pydantic'
 					],
 		extras_require={
-			"deploy": [local_dep('robot_deployment')]
+			"deploy": ['robot_deployment']  #local_dep('robot_deployment')]  # needs to be installed manually
 		}
 )
