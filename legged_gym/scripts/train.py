@@ -28,11 +28,12 @@ class TrainScriptConfig:
     more aliases for your experiments.
     """
 
-    defaults: Tuple[Any] = (
-        "_self_",
-        {"override hydra/launcher": "joblib"},
-        
-    )
+    # Uncomment below to launch through joblib or add a different launcher / sweeper
+    #defaults: Tuple[Any] = (
+    #    "_self_",
+    #    {"override hydra/launcher": "joblib"},
+    #    
+    #)
 
     seed: int = 1
     torch_deterministic: bool = False
