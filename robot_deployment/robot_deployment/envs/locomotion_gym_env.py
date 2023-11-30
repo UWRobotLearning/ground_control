@@ -162,7 +162,7 @@ class LocomotionGymEnv(gym.Env):
                     lin_vel_x, lin_vel_y, ang_vel, right_bump = self.gamepad.get_command()
                     self.commands = np.array([lin_vel_x, lin_vel_y, ang_vel])
                 else:
-                    raise ValueError()
+                    raise ValueError("no joystick (or other input) available for commands")
                 multiplier = np.array([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel])
                 obs_list.append(self.commands * multiplier)
             elif sensor == "motor_pos":

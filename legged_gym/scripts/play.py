@@ -16,7 +16,7 @@ from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
-                                      empty_cfg, from_repo_root)
+                                      empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
 
 @dataclass
@@ -32,6 +32,7 @@ class PlayScriptConfig:
     device: str = "cpu"
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
+
     task: TaskConfig = empty_cfg(TaskConfig)(
         env = empty_cfg(EnvConfig)(
             num_envs = "${num_envs}"
@@ -40,7 +41,7 @@ class PlayScriptConfig:
             get_commands_from_joystick = "${use_joystick}"
         ),
         sim = empty_cfg(SimConfig)(
-            device = " ${device}",
+            device = "${device}",
             use_gpu_pipeline = "${evaluate_use_gpu: ${task.sim.device}}",
             headless = "${headless}",
             physx = empty_cfg(SimConfig.PhysxConfig)(
@@ -72,11 +73,13 @@ def main(cfg: PlayScriptConfig):
     loaded_cfg = OmegaConf.load(latest_config_filepath)
 
     log.info("2. Merging loaded config, defaults and current top-level config.")
+    del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
-    merged_cfg = OmegaConf.merge(default_cfg,  # loads default values at the end if it's not specified anywhere else
-                                 loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
-                                 cfg           # highest priority, loads from the top-level config dataclass above
-                                )
+    merged_cfg = OmegaConf.merge(
+        default_cfg,  # loads default values at the end if it's not specified anywhere else
+        loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
+        cfg           # highest priority, loads from the top-level config dataclass above
+    )
     # Resolves the config (replaces all "interpolations" - references in the config that need to be resolved to constant values)
     # and turns it to a dictionary (instead of DictConfig in OmegaConf). Throws an error if there are still missing values.
     merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
@@ -85,8 +88,11 @@ def main(cfg: PlayScriptConfig):
     cfg = TypeAdapter(PlayScriptConfig).validate_python(merged_cfg_dict)
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
+    log.info(f"3. Printing merged cfg.")
+    print(OmegaConf.to_yaml(cfg))
+    save_config_as_yaml(cfg)
 
-    log.info(f"3. Preparing environment and runner.")
+    log.info(f"4. Preparing environment and runner.")
     task_cfg = cfg.task
     env: A1 = hydra.utils.instantiate(task_cfg)
     env.reset()
@@ -95,7 +101,7 @@ def main(cfg: PlayScriptConfig):
 
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
     resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
-    log.info(f"4. Loading policy checkpoint from: {resume_path}.")
+    log.info(f"5. Loading policy checkpoint from: {resume_path}.")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=env.device)
 
@@ -103,7 +109,7 @@ def main(cfg: PlayScriptConfig):
         export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
         log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
-    log.info(f"5. Running interactive play script.")
+    log.info(f"6. Running interactive play script.")
     current_time = time.time()
     num_steps = int(cfg.episode_length_s / env.dt)
     for i in range(num_steps):
@@ -115,7 +121,7 @@ def main(cfg: PlayScriptConfig):
             time.sleep(env.dt - duration)
         current_time = time.time()
 
-    log.info("6. Exit Cleanly")
+    log.info("7. Exit Cleanly")
     env.exit()
 
 if __name__ == '__main__':

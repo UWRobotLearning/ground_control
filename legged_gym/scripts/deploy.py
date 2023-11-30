@@ -1,113 +1,151 @@
 import isaacgym
 import logging
-import pickle
 import os.path as osp
+import time
 
 from dataclasses import dataclass
-from omegaconf import OmegaConf, MISSING
 import hydra
 from hydra.core.config_store import ConfigStore
+from omegaconf import OmegaConf, MISSING
+from pydantic import TypeAdapter
 
-from configs.definitions import DeploymentConfig, TaskConfig, TrainConfig
+from configs.hydra import ExperimentHydraConfig
+from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
+                                 SimConfig, RunnerConfig, TerrainConfig)
+from configs.definitions import DeploymentConfig
+from configs.overrides.domain_rand import NoDomainRandConfig
+from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
-from legged_gym.scripts.train import TrainScriptConfig  # so that loading config pickle file works
-from legged_gym.utils.helpers import export_policy_as_jit, get_load_path, get_latest_experiment_path
 from legged_gym.utils.observation_buffer import ObservationBuffer
-from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
+from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
+                                      empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
-
-import numpy as np
+from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
 import torch
 
-import matplotlib.pyplot as plt
+OmegaConf.register_new_resolver("not", lambda b: not b)
+OmegaConf.register_new_resolver("compute_timestep", lambda dt, decimation, action_repeat: dt * decimation / action_repeat)
 
 @dataclass
-class Config:
-    checkpoint_root: str = "experiment_logs"
-    checkpoint: int = -1
+class DeployScriptConfig:
+    checkpoint_root: str = from_repo_root("../experiment_logs/train")
+    logging_root: str = from_repo_root("../experiment_logs")
     export_policy: bool = True
-    use_real_robot: bool = False
-    get_commands_from_joystick: bool = True
-    episode_length_s: float = 100.
+    use_joystick: bool = True
+    episode_length_s: float = 200.
+    checkpoint: int = -1
     device: str = "cpu"
+    use_real_robot: bool = False
 
-    deployment: DeploymentConfig = DeploymentConfig(
-        use_real_robot="${use_real_robot}",
-        get_commands_from_joystick="${get_commands_from_joystick}",
-        render=DeploymentConfig.RenderConfig(
-            show_gui="${not: ${use_real_robot}}"
+    hydra: ExperimentHydraConfig = ExperimentHydraConfig()
+
+    task: TaskConfig = empty_cfg(TaskConfig)(
+        env = empty_cfg(EnvConfig)(
+            num_envs = "${num_envs}"
+        ),
+        observation = empty_cfg(ObservationConfig)(
+            get_commands_from_joystick = "${use_joystick}"
+        ),
+        sim = empty_cfg(SimConfig)(
+            device = "${device}",
+            use_gpu_pipeline = "${evaluate_use_gpu: ${task.sim.device}}",
+            headless = True, # meaning Isaac is headless, but not the target for deployment 
+            physx = empty_cfg(SimConfig.PhysxConfig)(
+                use_gpu = "${evaluate_use_gpu: ${task.sim.device}}"
+            )
+        ),
+        terrain = empty_cfg(TerrainConfig)(
+            curriculum = False
+        ),
+        noise = NoNoiseConfig(),
+        domain_rand = NoDomainRandConfig()
+    ) 
+    train: TrainConfig = empty_cfg(TrainConfig)(
+        device = "${device}",
+        log_dir = "${hydra:runtime.output_dir}",
+        runner = empty_cfg(RunnerConfig)(
+            checkpoint="${checkpoint}"
         )
     )
-
-    task: TaskConfig = MISSING 
-    train: TrainConfig = MISSING
-
-OmegaConf.register_new_resolver("not", lambda b: not b)
+    deployment: DeploymentConfig = DeploymentConfig(
+        use_real_robot="${use_real_robot}",
+        get_commands_from_joystick="${use_joystick}",
+        render=DeploymentConfig.RenderConfig(
+            show_gui="${not: ${use_real_robot}}"
+        ),
+        timestep="${compute_timestep: ${task.sim.dt}, ${task.control.decimation}, ${deployment.action_repeat}}",
+        init_position="${task.init_state.pos}",
+        init_joint_angles="${task.init_state.default_joint_angles}",
+        stiffness="${task.control.stiffness}",
+        damping="${task.control.damping}",
+        action_scale="${task.control.action_scale}"
+    )
 
 cs = ConfigStore.instance()
-cs.store(name="config", node=Config)
+cs.store(name="config", node=DeployScriptConfig)
 
 @hydra.main(version_base=None, config_name="config")
-def main(cfg: Config):
+def main(cfg: DeployScriptConfig):
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
-    latest_config_filepath = osp.join(experiment_path, "resolved_config.pkl")
+    latest_config_filepath = osp.join(experiment_path, "resolved_config.yaml")
     log.info(f"1. Deserializing policy config from: {osp.abspath(latest_config_filepath)}")
-    with open(latest_config_filepath, "rb") as cfg_pkl:
-        loaded_cfg = pickle.load(cfg_pkl)
-    OmegaConf.resolve(loaded_cfg)
+    loaded_cfg = OmegaConf.load(latest_config_filepath)
 
-    cfg.task = loaded_cfg.task
-    cfg.train = loaded_cfg.train
+    log.info("2. Merging loaded config, defaults and current top-level config.")
+    del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
+    default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
+    merged_cfg = OmegaConf.merge(
+        default_cfg,  # loads default values at the end if it's not specified anywhere else
+        loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
+        cfg           # highest priority, loads from the top-level config dataclass above
+    )
+    # Resolves the config (replaces all "interpolations" - references in the config that need to be resolved to constant values)
+    # and turns it to a dictionary (instead of DictConfig in OmegaConf). Throws an error if there are still missing values.
+    merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
+    # Creates a new DeployScriptConfig object (with type-checking and optional validation) using Pydantic.
+    # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
+    cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
+    # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
+    # cfg = PlayScriptConfig(**merged_cfg_dict)
+    log.info(f"3. Printing merged cfg.")
+    print(OmegaConf.to_yaml(cfg))
+    save_config_as_yaml(cfg)
 
-    # override some params for purposes of evaluation
-    cfg.task.sim.device = cfg.device
-    cfg.task.sim.use_gpu_pipeline = cfg.task.sim.physx.use_gpu = (cfg.task.sim.device != "cpu")
-    cfg.task.sim.headless = True
-    cfg.train.device = cfg.device
-    cfg.train.runner.checkpoint = cfg.checkpoint
-    cfg.deployment.timestep = cfg.task.sim.dt * cfg.task.control.decimation / cfg.deployment.action_repeat
-    cfg.deployment.init_position = cfg.task.init_state.pos
-    cfg.deployment.init_joint_angles = cfg.task.init_state.default_joint_angles
-    cfg.deployment.stiffness = cfg.task.control.stiffness
-    cfg.deployment.damping = cfg.task.control.damping
-    cfg.deployment.action_scale = cfg.task.control.action_scale
-
-    # prepare environment (used to load policy)
+    log.info(f"4. Preparing Isaac environment and runner.")
     task_cfg = cfg.task
     isaac_env: A1 = hydra.utils.instantiate(task_cfg)
-
-    # load policy
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=isaac_env, _recursive_=False)
-    train_cfg = cfg.train
-    resume_path = get_load_path(experiment_root, checkpoint=train_cfg.runner.checkpoint)
-    log.info(f"Loading model from: {resume_path}")
+
+    experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
+    resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
+    log.info(f"5. Loading policy checkpoint from: {resume_path}.")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=isaac_env.device)
 
-    # export policy as a jit module (used to run it from C++)
     if cfg.export_policy:
-        export_policy_as_jit(runner.alg.actor_critic, experiment_root)
-        log.info(f"Exported policy as jit script to: {experiment_root}")
+        export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
+        log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
-
+    log.info(f"6. Instantiating robot deployment environment.")
     # create robot environment (either in PyBullet or real world)
-    env = LocomotionGymEnv(
+    deploy_env = LocomotionGymEnv(
         cfg.deployment,
         cfg.task.observation.sensors,
         cfg.task.normalization.obs_scales,
         cfg.task.commands.ranges
     )
 
-    obs, info = env.reset()
+    obs, info = deploy_env.reset()
     for _ in range(1):
-        obs, *_, info = env.step(env.default_motor_angles)
+        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
     obs_buf = ObservationBuffer(1, isaac_env.num_obs, task_cfg.observation.history_steps, runner.device)
 
     all_actions = []
     all_infos = None
 
-    for t in range(int(cfg.episode_length_s / env.robot.control_timestep)):
+    log.info(f"7. Running the inference loop.")
+    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
         # Form observation for policy.
         obs = torch.tensor(obs, device=runner.device).float()
         if t == 0:
@@ -122,16 +160,18 @@ def main(cfg: Config):
 
         # Evaluate policy and act.
         actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-        actions = task_cfg.control.action_scale*actions + env.default_motor_angles
+        actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
         all_actions.append(actions)
-        obs, _, terminated, _, info = env.step(actions)
+        obs, _, terminated, _, info = deploy_env.step(actions)
 
         if terminated:
             log.warning("Unsafe, terminating!")
             break
 
-    log.info("N. Exit Cleanly")
-    env.exit()
+    log.info("8. Exit Cleanly")
+    isaac_env.exit()
+    # TODO: check if target simulator (pybullet or other) has exit logic
+
 
 if __name__ == '__main__':
     log = logging.getLogger(__name__)
