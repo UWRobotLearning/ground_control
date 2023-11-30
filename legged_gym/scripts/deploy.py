@@ -18,7 +18,7 @@ from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
 from legged_gym.utils.observation_buffer import ObservationBuffer
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
-                                      empty_cfg, from_repo_root)
+                                      empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
 from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
 import torch
@@ -107,15 +107,18 @@ def main(cfg: DeployScriptConfig):
     cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
+    log.info(f"3. Printing merged cfg.")
+    print(OmegaConf.to_yaml(cfg))
+    save_config_as_yaml(cfg)
 
-    log.info(f"3. Preparing Isaac environment and runner.")
+    log.info(f"4. Preparing Isaac environment and runner.")
     task_cfg = cfg.task
     isaac_env: A1 = hydra.utils.instantiate(task_cfg)
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=isaac_env, _recursive_=False)
 
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
     resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
-    log.info(f"4. Loading policy checkpoint from: {resume_path}.")
+    log.info(f"5. Loading policy checkpoint from: {resume_path}.")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=isaac_env.device)
 
@@ -123,26 +126,26 @@ def main(cfg: DeployScriptConfig):
         export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
         log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
-    log.info(f"5. Instantiating robot deployment environment.")
+    log.info(f"6. Instantiating robot deployment environment.")
     # create robot environment (either in PyBullet or real world)
-    env = LocomotionGymEnv(
+    deploy_env = LocomotionGymEnv(
         cfg.deployment,
         cfg.task.observation.sensors,
         cfg.task.normalization.obs_scales,
         cfg.task.commands.ranges
     )
 
-    obs, info = env.reset()
+    obs, info = deploy_env.reset()
     for _ in range(1):
-        obs, *_, info = env.step(env.default_motor_angles)
+        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
     obs_buf = ObservationBuffer(1, isaac_env.num_obs, task_cfg.observation.history_steps, runner.device)
 
     all_actions = []
     all_infos = None
 
-    log.info(f"6. Running the inference loop.")
-    for t in range(int(cfg.episode_length_s / env.robot.control_timestep)):
+    log.info(f"7. Running the inference loop.")
+    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
         # Form observation for policy.
         obs = torch.tensor(obs, device=runner.device).float()
         if t == 0:
@@ -157,16 +160,17 @@ def main(cfg: DeployScriptConfig):
 
         # Evaluate policy and act.
         actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-        actions = task_cfg.control.action_scale*actions + env.default_motor_angles
+        actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
         all_actions.append(actions)
-        obs, _, terminated, _, info = env.step(actions)
+        obs, _, terminated, _, info = deploy_env.step(actions)
 
         if terminated:
             log.warning("Unsafe, terminating!")
             break
 
-    log.info("7. Exit Cleanly")
-    env.exit()
+    log.info("8. Exit Cleanly")
+    isaac_env.exit()
+    # TODO: check if target simulator (pybullet or other) has exit logic
 
 
 if __name__ == '__main__':
