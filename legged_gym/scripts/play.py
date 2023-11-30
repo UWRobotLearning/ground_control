@@ -32,6 +32,7 @@ class PlayScriptConfig:
     device: str = "cpu"
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
+
     task: TaskConfig = empty_cfg(TaskConfig)(
         env = empty_cfg(EnvConfig)(
             num_envs = "${num_envs}"
@@ -40,7 +41,7 @@ class PlayScriptConfig:
             get_commands_from_joystick = "${use_joystick}"
         ),
         sim = empty_cfg(SimConfig)(
-            device = " ${device}",
+            device = "${device}",
             use_gpu_pipeline = "${evaluate_use_gpu: ${task.sim.device}}",
             headless = "${headless}",
             physx = empty_cfg(SimConfig.PhysxConfig)(
@@ -72,11 +73,13 @@ def main(cfg: PlayScriptConfig):
     loaded_cfg = OmegaConf.load(latest_config_filepath)
 
     log.info("2. Merging loaded config, defaults and current top-level config.")
+    del(loaded_cfg.hydra)
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
-    merged_cfg = OmegaConf.merge(default_cfg,  # loads default values at the end if it's not specified anywhere else
-                                 loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
-                                 cfg           # highest priority, loads from the top-level config dataclass above
-                                )
+    merged_cfg = OmegaConf.merge(
+        default_cfg,  # loads default values at the end if it's not specified anywhere else
+        loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
+        cfg           # highest priority, loads from the top-level config dataclass above
+    )
     # Resolves the config (replaces all "interpolations" - references in the config that need to be resolved to constant values)
     # and turns it to a dictionary (instead of DictConfig in OmegaConf). Throws an error if there are still missing values.
     merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
