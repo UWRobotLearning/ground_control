@@ -17,11 +17,6 @@ OmegaConf.register_new_resolver("get_script_name", get_script_name)
 
 @dataclass
 class ExperimentHydraConfig(HydraConf):
-    defaults: Tuple[Any] = (
-        #{"launcher": "basic"},
-        {"override hydra/launcher": "joblib"},
-        #{"sweeper": "basic"},
-    )
     root_dir_name: str = "${from_repo_root: ${oc.select: logging_root,../experiment_logs}}/${get_script_name:}"
     new_override_dirname: str = "${slash_to_dot: ${hydra:job.override_dirname}}"
     run: Dict = field(default_factory=lambda: {
@@ -54,10 +49,10 @@ class ExperimentHydraConfig(HydraConf):
     # This specifically configures the "joblib" launcher
     # Note: for now, parallelism is disabled (hence n_jobs=1) due to a blocker related to:
     # https://github.com/facebookresearch/hydra/discussions/2186 
-    launcher: Dict = field(default_factory=lambda: {
-        "n_jobs": "1",
-        "pre_dispatch": "1*n_jobs",
-    })
+    #launcher: Dict = field(default_factory=lambda: {
+    #    "n_jobs": "1",
+    #    "pre_dispatch": "1*n_jobs",
+    #})
 
     #sweeper: Dict = field(default_factory=lambda: {
     #    "other": "2",
