@@ -44,7 +44,7 @@ class Terrain():
 
         for choice in TerrainChoices:
             if hasattr(cfg, choice):
-                getattr(self, choice + '_terrain')(getattr(cfg, choice))
+                getattr(self,   )(getattr(cfg, choice))
                 
     #Add prefix '_terrain_' to methods that do not return a terrain
     #Check if the methods are mentioned in the config hasattr
