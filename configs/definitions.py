@@ -21,6 +21,15 @@ INIT_JOINT_ANGLES = {
     "4_RL_calf_joint": -1.8
 }
 
+TerrainChoices = {
+    "valley",
+    "selected",
+    "random",
+    "imported",
+    "curriculum"
+}
+
+
 ### ======================= Task Configs =============================
 
 
@@ -42,10 +51,12 @@ class ObservationConfig:
 @dataclass
 class TerrainConfig:
     mesh_type: str = 'plane' # one of [None, 'plane', 'heightfield', 'trimesh']
-    grid_enable: bool = False
-    @dataclass
-    class GridConfig:
-        enabled: bool = False
+    # grid_enable: bool = False
+    # @dataclass
+    # class GridConfig:
+    #     num_rows: int = None
+    #     num_cols: int = None
+    
     curriculum: bool = False
     static_friction: float = 1.
     dynamic_friction: float = 1.
@@ -58,7 +69,6 @@ class TerrainConfig:
     terrain_kwargs: Optional[Dict[str, Any]] = None # dict of arguments for selected terrain
     max_init_terrain_level: Optional[int] = None # starting curriculum state
     randomTerrain : bool = False
-    @dat
     realTerrain : bool  = False
 
     terrain_length: Optional[float] = None
@@ -107,7 +117,7 @@ class ControlConfig:
     control_type: str = "P" # P: position, V: velocity, T: torques
 
     # PD drive parameters
-    # Configures all joint
+    # Configures all jointy
     # see: paper blah for justification
     stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)) # [N*m/rad]
     damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]

@@ -12,7 +12,7 @@ from tqdm import tqdm # Ege
 import pickle # Ege
 
 from isaacgym import terrain_utils
-from configs.definitions import TerrainConfig
+from configs.definitions import TerrainChoices, TerrainConfig
 
 
 
@@ -42,7 +42,10 @@ class Terrain():
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
 
-        
+        for choice in TerrainChoices:
+            if hasattr(cfg, choice):
+                getattr(self, choice + '_terrain')(getattr(cfg, choice))
+                
     #Add prefix '_terrain_' to methods that do not return a terrain
     #Check if the methods are mentioned in the config hasattr
         # if yes return the attrs getattr
@@ -89,7 +92,7 @@ class Terrain():
             """
 
         elif cfg.random:
-            self.randomized_terrain()
+            self.random_terrain()
             # self.ready_made_semivalley_terrain()
 
         self.heightsamples = self.height_field_raw
@@ -97,19 +100,11 @@ class Terrain():
             self.vertices, self.triangles = terrain_utils.convert_heightfield_to_trimesh(   self.height_field_raw,
                                                                                             self.cfg.horizontal_scale,
                                                                                             self.cfg.vertical_scale,
-                                                                                            self.cfg.slope_threshold)
-    
-
-
-            
-
-
-
-        
+                                                                                            self.cfg.slope_threshold) 
 
     # / ============= Terrain Multiplexing ============================
 
-    def randomized_terrain(self):
+    def random_terrain(self):
         for k in range(self.num_sub_terrains):
             # Env coordinates in the world
             (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
@@ -119,7 +114,7 @@ class Terrain():
             terrain = self.make_terrain(choice, difficulty)
             self.add_terrain_to_map(terrain, i, j)
 
-    def curiculum(self):
+    def curiculum_terrain(self):
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
                 difficulty = i / self.cfg.num_rows
