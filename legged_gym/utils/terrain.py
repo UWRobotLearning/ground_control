@@ -45,7 +45,7 @@ class Terrain():
 
         for choice in TerrainChoices:
             if hasattr(cfg, choice):
-                getattr(self,   )(getattr(cfg, choice))
+                getattr(self, choice + "_terrain")(getattr(cfg, choice))
 
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
