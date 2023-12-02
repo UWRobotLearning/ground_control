@@ -42,58 +42,10 @@ class Terrain():
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
 
+
         for choice in TerrainChoices:
             if hasattr(cfg, choice):
                 getattr(self,   )(getattr(cfg, choice))
-                
-    #Add prefix '_terrain_' to methods that do not return a terrain
-    #Check if the methods are mentioned in the config hasattr
-        # if yes return the attrs getattr
-
-        # if not return
-
-    # ============= Terrain Multiplexing ============================
-    #TODO: needs to be cleaned up and clearer
-        if hasattr(cfg, 'valley'):
-            #TODO: see whats going on with these options. seems messy
-            # Ege - added new terrain optiongrid_enable: bool = False
-    # @dataclass
-    # class GridConfig:
-    #     num_rows: int = None
-    #     num_cols: int = None
-            #self.ready_made_valley_terrain()
-
-            #rohan
-            self.valley_terrain()
-        elif hasattr(cfg, 'plane_slope'):
-            self.slope_terrain(cfg.plane_slope)
-
-        
-        elif cfg.curriculum:
-            #self.curriculum()
-            #self.ready_made_valley_terrain()  # Ege - added terrain to curriculum setting as well
-            #self.valley_terrain()
-            self.ready_made_semivalley_terrain()
-            # Ege - trying gap terrain
-            '''
-            terrain = terrain_utils.SubTerrain("terrain",
-                                width=self.width_per_env_pixels,
-                                length=self.width_per_env_pixels,
-                                vertical_scale=self.cfg.vertical_scale,
-                                horizontal_scale=self.cfg.horizontal_scale)
-            gap_terrain(terrain, 1)
-            '''
-
-        elif cfg.selected:
-            self.selected_terrain() 
-            """
-        Need to check for imported terrains and if the file having that exists
-        
-            """
-
-        elif cfg.random:
-            self.random_terrain()
-            # self.ready_made_semivalley_terrain()
 
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
