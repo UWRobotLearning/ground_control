@@ -98,15 +98,25 @@ props["driveMode"][0] = gymapi.DOF_MODE_VEL
 props["driveMode"][3] = gymapi.DOF_MODE_VEL
 props["driveMode"][1] = gymapi.DOF_MODE_POS
 props["driveMode"][4] = gymapi.DOF_MODE_POS
-props["stiffness"] = (100, 100, 10, 100, 100, 10)
+props["driveMode"][2] = gymapi.DOF_MODE_VEL
+props["driveMode"][5] = gymapi.DOF_MODE_VEL
+props["stiffness"] = (100, 100, 0, 100, 100, 0)
 props["damping"][:] = 20
 props["friction"] = (1, 1, 1, 1, 1, 1)
 gym.set_actor_dof_properties(env0, car0, props)
 
 print(props["driveMode"])
 
-gym.set_actor_dof_position_targets(env0, car0, [0,0.2,0,0,0.2,0])
-gym.set_actor_dof_velocity_targets(env0, car0, [5, 0.0, 0, 5, 0.0, 0])
+# ackerman drive - different angles for wheels
+T = 0.5
+WB = 0.3
+alpha = 0.2
+alpha_l = math.atan(WB * math.tan(alpha) / (WB - T/2 * math.tan(alpha)))
+alpha_r = math.atan(WB * math.tan(alpha) / (WB + T/2 * math.tan(alpha)))
+
+
+gym.set_actor_dof_position_targets(env0, car0, [0,alpha_l,0,0,alpha_r,0])
+gym.set_actor_dof_velocity_targets(env0, car0, [1, 0.0, 1, 1, 0.0, 1])
 
 # Set DOF drive targets
 # cart_dof_handle0 = gym.find_actor_dof_handle(env0, car0, 'slider_to_cart')
