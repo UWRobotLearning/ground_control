@@ -29,12 +29,15 @@ from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfi
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 
-from legged_gym.utils.helpers import (kwargs = dict(FLAGS.config)policy_as_jit, get_load_path, get_latest_experiment_path,
+from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 
 # from witp.rl.agents.agent import Agent
 from witp.rl.agents import SACLearner
 from witp.configs.droq_config import get_config
+from witp.rl.data import ReplayBuffer
+
+from flax.training import checkpoints
 
 
 
@@ -402,43 +405,98 @@ def main(cfg: DeployWITPConfig):
     for _ in range(1):
         obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
-    seed = jax.random.PRNGKey(0)
-        kwargs = get_config()
-        agent = SACLearner.create(seed, deploy_env.observation_space,
-                              deploy_env.action_space, **kwargs)
+    seed = 42
+    kwargs = get_config()
+    agent = SACLearner.create(seed, deploy_env.observation_space,
+                            deploy_env.action_space, **kwargs)
+    
+    max_steps = int(1e6)
+    replay_buffer = ReplayBuffer(deploy_env.observation_space, deploy_env.action_space,
+                                     max_steps)
+    replay_buffer.seed(seed)
+    
+    import pdb;pdb.set_trace()
+    chkpt_dir = "/home/mateo/projects/walk_in_the_park/successful_run/saved/checkpoints"
+    last_checkpoint = checkpoints.latest_checkpoint(chkpt_dir)
+    agent = checkpoints.restore_checkpoint(last_checkpoint, agent)
 
-    print(obs)
-    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
-        # Form observation for policy.
+    import pdb;pdb.set_trace()
+    action, agent = agent.sample_actions(obs)
+    next_observation, reward, done, info = deploy_env.step(action)
 
-        ## Convert observation to format taken by policy
-        # obs = torch.tensor(obs, device=runner.device).float()
+    ## Manually setting up observation space and action space
+    obs, info = deploy_env.reset()
+    for _ in range(1):
+        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
-        ## Insert observation into buffer (initialize buffer first if first timestep)
-        # if t == 0:
-        #     obs_buf.reset([0], obs)
-        #     all_infos = {k: [v.copy()] for k, v in info.items()}
-        # else:
-        #     obs_buf.insert(obs)
-        #     for k, v in info.items():
-        #         all_infos[k].append(v.copy())
+    num_episodes = 1000
+    for i in range(num_episodes):
+        observation, done = deploy_env.reset(), False
+        while not done:
+            action = agent.eval_actions(observation)
+            observation, _, done, _ = deploy_env.step(action)
+        print(f"Done with episode {i}")
 
-        ## If more than one observation needed, get buffer of observations
-        # policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
+        
+    # for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
+    #     # Form observation for policy.
 
-        # # Evaluate policy and act.
-        # actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-        # actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
-        # all_actions.append(actions)
+    #     ## Convert observation to format taken by policy
+    #     # obs = torch.tensor(obs, device=runner.device).float()
+        
+    #     ## Insert observation into buffer (initialize buffer first if first timestep)
+    #     # if t == 0:
+    #     #     obs_buf.reset([0], obs)
+    #     #     all_infos = {k: [v.copy()] for k, v in info.items()}
+    #     # else:
+    #     #     obs_buf.insert(obs)
+    #     #     for k, v in info.items():
+    #     #         all_infos[k].append(v.copy())
 
-        ## Environment step
-        # obs, _, terminated, _, info = deploy_env.step(actions)
+    #     ## If more than one observation needed, get buffer of observations
+    #     # policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
 
-        # if terminated:
-        #     log.warning("Unsafe, terminating!")
-        #     break
-        print("step")
-        time.sleep(0.1)
+    #     # # Evaluate policy and act.
+    #     # actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
+    #     # actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
+    #     # all_actions.append(actions)
+
+    #     ## Environment step
+    #     # obs, _, terminated, _, info = deploy_env.step(actions)
+
+    #     # if terminated:
+    #     #     log.warning("Unsafe, terminating!")
+    #     #     break
+
+    #     for _ in range(num_episodes):
+    #     observation, done = env.reset(), False
+    #     while not done:
+    #         action = agent.eval_actions(observation)
+    #         observation, _, done, _ = env.step(action)
+
+    #     action, agent = agent.sample_actions(obs)
+    #     next_observation, reward, done, info = deploy_env.step(action)
+
+    #     mask = 0.0
+
+    #     replay_buffer.insert(
+    #         dict(observations=observation,
+    #              actions=action,
+    #              rewards=reward,
+    #              masks=mask,
+    #              dones=done,
+    #              next_observations=next_observation))
+    #     observation = next_observation
+
+    #     if done:
+    #         print("Done is True")
+    #         break
+    #         # observation, done = env.reset(), False
+
+    #     print("step")
+    #     # time.sleep(0.1)
+
+    
 
 if __name__=="__main__":
     main()
