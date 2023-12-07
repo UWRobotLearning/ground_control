@@ -29,11 +29,12 @@ from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfi
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 
-from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
+from legged_gym.utils.helpers import (kwargs = dict(FLAGS.config)policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 
 # from witp.rl.agents.agent import Agent
 from witp.rl.agents import SACLearner
+from witp.configs.droq_config import get_config
 
 
 
@@ -361,14 +362,16 @@ class LocomotionGymEnv(gym.Env):
 
     def _build_observation_space(self):
         # TODO
+        return gym.spaces.Box(-np.inf, np.inf, (46,), np.float32)
         pass
 
     def _build_action_space(self):
         """Builds action space corresponding to joint position control"""
-        return gym.spaces.Box(
-            self.robot.motor_group.min_positions,
-            self.robot.motor_group.max_positions
-        )
+        # return gym.spaces.Box(
+        #     self.robot.motor_group.min_positions,
+        #     self.robot.motor_group.max_positions
+        # )
+        return gym.spaces.Box(-1.0, 1.0, (12,), np.float32)
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: DeployWITPConfig):
@@ -394,15 +397,18 @@ def main(cfg: DeployWITPConfig):
         cfg.task.commands.ranges
     )
 
+    ## Manually setting up observation space and action space
     obs, info = deploy_env.reset()
     for _ in range(1):
         obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
+    seed = jax.random.PRNGKey(0)
+        kwargs = get_config()
+        agent = SACLearner.create(seed, deploy_env.observation_space,
+                              deploy_env.action_space, **kwargs)
+
     print(obs)
     for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
-        seed = jax.random.PRNGKey(0)
-        agent = SACLearner.create(seed, env.observation_space,
-                              env.action_space, **kwargs)
         # Form observation for policy.
 
         ## Convert observation to format taken by policy
