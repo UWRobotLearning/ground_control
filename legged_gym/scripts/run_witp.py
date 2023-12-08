@@ -38,7 +38,9 @@ from witp.configs.droq_config import get_config
 from witp.rl.data import ReplayBuffer
 
 from flax.training import checkpoints
-
+import orbax.checkpoint 
+from flax.training import orbax_utils
+import flax
 
 
 OmegaConf.register_new_resolver("not", lambda b: not b)
@@ -400,11 +402,6 @@ def main(cfg: DeployWITPConfig):
         cfg.task.commands.ranges
     )
 
-    ## Manually setting up observation space and action space
-    obs, info = deploy_env.reset()
-    for _ in range(1):
-        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
-
     seed = 42
     kwargs = get_config()
     agent = SACLearner.create(seed, deploy_env.observation_space,
@@ -414,15 +411,45 @@ def main(cfg: DeployWITPConfig):
     replay_buffer = ReplayBuffer(deploy_env.observation_space, deploy_env.action_space,
                                      max_steps)
     replay_buffer.seed(seed)
-    
-    import pdb;pdb.set_trace()
-    chkpt_dir = "/home/mateo/projects/walk_in_the_park/successful_run/saved/checkpoints"
-    last_checkpoint = checkpoints.latest_checkpoint(chkpt_dir)
-    agent = checkpoints.restore_checkpoint(last_checkpoint, agent)
 
-    import pdb;pdb.set_trace()
-    action, agent = agent.sample_actions(obs)
-    next_observation, reward, done, info = deploy_env.step(action)
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer() 
+    ckptr = orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler())  # A stateless object, can be created on the fly.
+    # ckptr.restore(last_checkpoint, item=agent,
+            #   restore_args=flax.training.orbax_utils.restore_args_from_target(agent, mesh=None))
+
+    
+
+    
+    chkpt_dir = "/home/rll/projects/walk_in_the_park/saved/checkpoints"
+    last_checkpoint = checkpoints.latest_checkpoint(chkpt_dir)
+    # orbax_checkpointer.restore(last_checkpoint)
+    # agent = checkpoints.restore_checkpoint(last_checkpoint, agent)
+    agent = ckptr.restore(last_checkpoint, item=agent,
+              restore_args=flax.training.orbax_utils.restore_args_from_target(agent, mesh=None)) # orbax_checkpointer.restore(last_checkpoint, agent)
+
+    # import pdb;pdb.set_trace()
+
+    # import pdb;pdb.set_trace()
+   
+
+    # seed = 42
+    # kwargs = get_config()
+    # agent = SACLearner.create(seed, deploy_env.observation_space,
+    #                         deploy_env.action_space, **kwargs)
+    
+    # max_steps = int(1e6)
+    # replay_buffer = ReplayBuffer(deploy_env.observation_space, deploy_env.action_space,
+    #                                  max_steps)
+    # replay_buffer.seed(seed)
+    
+    # import pdb;pdb.set_trace()
+    # chkpt_dir = "/home/mateo/projects/walk_in_the_park/successful_run/saved/checkpoints"
+    # last_checkpoint = checkpoints.latest_checkpoint(chkpt_dir)
+    # agent = checkpoints.restore_checkpoint(last_checkpoint, agent)
+
+    # import pdb;pdb.set_trace()
+    # action, agent = agent.sample_actions(obs)
+    # next_observation, reward, done, info = deploy_env.step(action)
 
     ## Manually setting up observation space and action space
     obs, info = deploy_env.reset()
