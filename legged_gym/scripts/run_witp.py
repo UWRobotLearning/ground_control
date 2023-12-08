@@ -452,16 +452,22 @@ def main(cfg: DeployWITPConfig):
     # next_observation, reward, done, info = deploy_env.step(action)
 
     ## Manually setting up observation space and action space
-    obs, info = deploy_env.reset()
-    for _ in range(1):
-        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
+    # import pdb;pdb.set_trace()
+    # obs, info = deploy_env.reset()
+    # for _ in range(1):
+    #     obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
+    # import pdb;pdb.set_trace()
     num_episodes = 1000
     for i in range(num_episodes):
-        observation, done = deploy_env.reset(), False
+        obs, info = deploy_env.reset()
+        for _ in range(1):
+            obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
+            done = False
         while not done:
-            action = agent.eval_actions(observation)
-            observation, _, done, _ = deploy_env.step(action)
+            # action = agent.eval_actions(observation)
+            action, agent = agent.sample_actions(obs)
+            obs, _, done, _, info = deploy_env.step(action)
         print(f"Done with episode {i}")
 
         
