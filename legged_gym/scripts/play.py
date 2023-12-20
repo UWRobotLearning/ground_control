@@ -14,6 +14,7 @@ from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, Observation
                                  SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
+from configs.overrides.codesave import NoCodesaveConfig
 from legged_gym.envs.a1 import A1
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
@@ -60,10 +61,8 @@ class PlayScriptConfig:
         runner = empty_cfg(RunnerConfig)(
             checkpoint="${checkpoint}"
         ),
-        codesave = empty_cfg(CodesaveConfig)(
-            force_manual_commit=False
-        ),
     )
+    codesave: CodesaveConfig = NoCodesaveConfig()
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=PlayScriptConfig)

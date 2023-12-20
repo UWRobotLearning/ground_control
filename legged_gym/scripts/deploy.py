@@ -17,6 +17,7 @@ from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
 from legged_gym.utils.observation_buffer import ObservationBuffer
+from configs.overrides.codesave import NoCodesaveConfig
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
@@ -66,9 +67,6 @@ class DeployScriptConfig:
         runner = empty_cfg(RunnerConfig)(
             checkpoint="${checkpoint}"
         ),
-        codesave = empty_cfg(CodesaveConfig)(
-            force_manual_commit=False
-        ),
     )
     deployment: DeploymentConfig = DeploymentConfig(
         use_real_robot="${use_real_robot}",
@@ -83,6 +81,7 @@ class DeployScriptConfig:
         damping="${task.control.damping}",
         action_scale="${task.control.action_scale}"
     )
+    codesave: CodesaveConfig = NoCodesaveConfig()
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=DeployScriptConfig)
