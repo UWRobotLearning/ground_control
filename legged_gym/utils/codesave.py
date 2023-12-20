@@ -1,6 +1,5 @@
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.utils.helpers import from_repo_root
-from configs.definitions import CodesaveConfig
 
 import os
 import subprocess
@@ -11,20 +10,20 @@ from git.exc import InvalidGitRepositoryError
 # - If autocommit is enabled and new changes are made, autocommits and returns the new commit's hash.
 # - Otherwise, returns the latest commit hash. If force_manual_commit is enabled, forces user to
 #   commit all work manually before running.
-def resolve_commit_hash(cfg: CodesaveConfig):
+def resolve_commit_hash(cfg):
     if cfg.autocommit:
         return autocommit(commit_message=cfg.autocommit_message, push=cfg.autocommit_push)
     return check_commit(cfg.force_manual_commit)
 
 # Resolves commit hash in the log repo (for code-saving), if codesave_to_logs is enabled.
 # Otherwise returns None since no commit hash is tracked in the log repo.
-def resolve_codesave(cfg: CodesaveConfig):
+def resolve_codesave(cfg):
     if cfg.codesave_to_logs:
         return codesave_in_logs(logs_root=cfg.log_dir,
                                 codesave_dir=cfg.codesave_dir_in_logs,
                                 commit_message=cfg.autocommit_message,
                                 push=cfg.codesave_push)
-    return None
+    return ""
 
 # Checks if all changes to this repo have been committed, including untracked files. 
 # If force_commit is enabled and either a git repo is not initialized or there are
@@ -35,14 +34,14 @@ def check_commit(force_commit=False):
         repo = Repo(LEGGED_GYM_ROOT_DIR)
     except InvalidGitRepositoryError:
         if force_commit:
-            return Exception("force_commit: ground_control is not a git repo! Please run \'git init\' " + 
-                             "and commit all changes before running this script.")
-        return None
+            raise Exception("force_commit: ground_control is not a git repo! Please run \'git init\' " + 
+                            "and commit all changes before running this script.")
+        return ""
     
     if repo.is_dirty(untracked_files=True):
         if force_commit:
-            return Exception("force_commit: You have uncommitted (or untracked) work, commit them " +
-                             "before running this script.")
+            raise Exception("force_commit: You have uncommitted (or untracked) work, commit them " +
+                            "before running this script.")
     return repo.head.commit.hexsha
 
 # Commits all changes (including untracked files, except those in .gitignore) in the repo specified
@@ -74,17 +73,17 @@ def autocommit(autocommit_root=LEGGED_GYM_ROOT_DIR,  # Path to the root of the r
         commit = repo.index.commit(commit_message, committer=Actor("auto", "auto@commit.com"))
         # Print the newly committed files, up to 5 files, useful for seeing changes.
         # Save the changed files to be committed, in order to display them
-        committed_files = commit.stats.files.keys()
+        committed_files = list(commit.stats.files.keys())
         print(f"New autocommit to {autocommit_root}:")
         if len(committed_files) > 5:
-            print(", ".join(committed_files[:5]) + "+ others...")
+            print(", ".join(committed_files[:5]) + " and others...")
         else:
             print(", ".join(committed_files))
+        if push:  # Push if enabled
+            repo.git.push(); print("New commit pushed!")
     else:
         # Otherwise, output the latest commit hash
         print(f"Code not changed, no need to autocommit to {autocommit_root}")
-    if push:  # Push if enabled
-            repo.git.push(); print("New commit pushed!")
     # Return the latest commit hash
     return repo.head.commit.hexsha
 
@@ -93,8 +92,8 @@ def autocommit(autocommit_root=LEGGED_GYM_ROOT_DIR,  # Path to the root of the r
 # folder. Used for code saving without disturbing the working repo. Pushes commits if enabled.
 def codesave_in_logs(logs_root="../experiment_logs",   # The path to the experiment log folder (absolute or relative from ground_control)           
                      codesave_dir="codesave",          # The directory path relative from 'logs_root' in which the codebase will be saved
-                     commit_message="Autocommit",      # Message for each automatic commit.
-                     push=False):                      # If enabled, pushes new commits.
+                     commit_message="Autocommit",      # Message for each automatic commit
+                     push=False):                      # If enabled, pushes new commits
     logs_root = from_repo_root(logs_root)  # Get absolute path of the experiment log folder
     codesave_full_path = os.path.join(logs_root, codesave_dir)  # Get absolute path to the code-saving directory
     os.makedirs(codesave_full_path, exist_ok=True)  # If any folder doesn't exist in the path to save, create it.
