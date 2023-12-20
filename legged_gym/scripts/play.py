@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig)
+                                 SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
@@ -59,7 +59,10 @@ class PlayScriptConfig:
         log_dir = "${hydra:runtime.output_dir}",
         runner = empty_cfg(RunnerConfig)(
             checkpoint="${checkpoint}"
-        )
+        ),
+        codesave = empty_cfg(CodesaveConfig)(
+            force_manual_commit=False
+        ),
     )
 
 cs = ConfigStore.instance()
