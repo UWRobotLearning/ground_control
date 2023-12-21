@@ -1,9 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, Optional, Tuple
 from omegaconf import OmegaConf
 import numpy as np
 
 from legged_gym.utils.helpers import from_repo_root
+from legged_gym.utils.codesave import resolve_commit_hash, resolve_codesave
 
 INIT_JOINT_ANGLES = {
     "1_FR_hip_joint": 0.,
@@ -324,6 +325,26 @@ class RunnerConfig:
     # load and resume
     resume_root: str = ""
     checkpoint: int = -1 # -1 = last saved model
+
+OmegaConf.register_new_resolver("resolve_commit_hash", resolve_commit_hash)
+OmegaConf.register_new_resolver("resolve_codesave", resolve_codesave)
+
+@dataclass
+class CodesaveConfig:
+    @dataclass
+    class CodesaveSettingsConfig:
+        force_manual_commit: bool = True  # Forces all work to be committed before running.
+        autocommit: bool = False  # Commits all work (except .gitignore), overrides force_manual_commit.
+        autocommit_push: bool = False  # If autocommit enabled, pushes after autocommits as well.
+        codesave_to_logs: bool = False  # Copies work to a location in the log folder, and autocommits.
+        codesave_push: bool = False  # If codesave_to_logs enabled, pushes after autocommits as well.
+        log_dir: str = "${oc.select: logging_root,../experiment_logs}"  # Path to the log folder root
+        autocommit_message: str = "Autocommit"  # Commit message for code-saving or autocommits
+        codesave_dir_in_logs: str = "codesave"  # Path (relative to the log folder) to save the codebase.
+    
+    settings: CodesaveSettingsConfig = CodesaveSettingsConfig()
+    latest_commit_hash: str = "${resolve_commit_hash: ${.settings}}"
+    codesave_autocommit_hash: str = "${resolve_codesave: ${.settings}}"
 
 @dataclass
 class TrainConfig:

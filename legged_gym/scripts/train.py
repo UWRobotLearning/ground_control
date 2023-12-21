@@ -11,14 +11,15 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
-from configs.definitions import TaskConfig, TrainConfig
+from configs.definitions import TaskConfig, TrainConfig, CodesaveConfig
+from configs.overrides.codesave import LogsCodesaveConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1
 from rsl_rl.runners import OnPolicyRunner
-from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, save_config_as_yaml,
-                                      from_repo_root)
+from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, 
+                                      save_config_as_yaml, from_repo_root)
 
 @dataclass
 class TrainScriptConfig:
@@ -47,6 +48,7 @@ class TrainScriptConfig:
 
     task: TaskConfig = LocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
+    codesave: CodesaveConfig = LogsCodesaveConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
