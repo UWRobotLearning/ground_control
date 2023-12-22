@@ -134,6 +134,9 @@ class DeployWITPConfig:
         render=DeploymentConfig.RenderConfig(
             show_gui="${not: ${use_real_robot}}"
         ),
+        # render=DeploymentConfig.RenderConfig(
+        #     show_gui=False
+        # ),
         timestep="${compute_timestep: ${task.sim.dt}, ${task.control.decimation}, ${deployment.action_repeat}}",
         init_position="${task.init_state.pos}",
         init_joint_angles="${task.init_state.default_joint_angles}",
@@ -214,17 +217,47 @@ class LocomotionGymEnv(gym.Env):
 
         self.current_time = time.time()
         return self.get_observation(), self.get_full_observation()
+    
+    def witp_action_transform(self, action):
+        _INIT_QPOS = np.asarray([0.05, 0.7, -1.4] * 4)
+        ACTION_OFFSET = np.asarray([0.2, 0.4, 0.4] * 4)
+
+        low = _INIT_QPOS - ACTION_OFFSET
+        high = _INIT_QPOS + ACTION_OFFSET
+
+        min_norm_action = -1
+        max_norm_action = 1
+        min_norm_action = (
+            np.zeros((12,), dtype=float) + min_norm_action
+        )
+        max_norm_action = (
+            np.zeros((12,), dtype=float) + max_norm_action
+        )
+
+        action = low + (high - low) * (
+            (action - min_norm_action) / (max_norm_action - min_norm_action)
+        )
+        action = np.clip(action, low, high)
+
+        return action
 
     def step(self, action):
         """Step forward the environment, given the action.
 
         action: 12-dimensional NumPy array of desired motor angles
         """
+        # print("\tLocomotionGymEnv.step(action)")
+        # print(f"\t\tReceived Action: {action}")
         clipped_action = np.clip(
             action,
             self.robot.motor_group.min_positions,
             self.robot.motor_group.max_positions
         )
+        # print(f"\t\tAction limits:")
+        # print(f"\t\t\tMin: {self.robot.motor_group.min_positions}")
+        # print(f"\t\t\tMax: {self.robot.motor_group.max_positions}")
+        # print(f"Clipped Action: {clipped_action}")
+        # clipped_action = self.witp_action_transform(clipped_action)
         motor_action = MotorCommand(
             desired_position=clipped_action,
             kp=self.robot.motor_group.kps,
