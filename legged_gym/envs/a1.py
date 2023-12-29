@@ -9,7 +9,7 @@ from isaacgym import gymtorch, gymapi, gymutil
 
 import torch
 
-from legged_gym.envs.base_task import BaseTask
+from legged_gym.envs.base_env import BaseEnv
 from legged_gym.utils.gamepad import Gamepad
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.legmath import quat_apply_yaw, wrap_to_pi
@@ -92,7 +92,7 @@ DIAGNOSTICS_LOG_NAMES = dict(
     terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level"
 )
 
-class A1(BaseTask):
+class A1(BaseEnv):
     def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
                  commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
                  asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,

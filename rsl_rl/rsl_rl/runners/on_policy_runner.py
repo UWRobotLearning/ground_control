@@ -11,7 +11,7 @@ import torch
 
 from configs.definitions import (PolicyConfig, AlgorithmConfig, RunnerConfig)
 
-from legged_gym.envs.a1 import A1
+from legged_gym.envs.base_env import BaseEnv
 from rsl_rl.algorithms.ppo import PPO, Metrics
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 
@@ -24,7 +24,7 @@ class OnPolicyRunner:
 
     def __init__(
         self,
-        env: A1,
+        env: BaseEnv,
         policy: PolicyConfig,
         algorithm: AlgorithmConfig,
         runner: RunnerConfig,

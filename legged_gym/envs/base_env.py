@@ -12,8 +12,8 @@ from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig, Co
                                  SimConfig)
 
 
-# Base class for RL tasks
-class BaseTask:
+# Base class for RL envs
+class BaseEnv:
     sensor_dims: Dict[str, int]
 
     def __init__(self, env: EnvConfig, observation: ObservationConfig, sim: SimConfig):
