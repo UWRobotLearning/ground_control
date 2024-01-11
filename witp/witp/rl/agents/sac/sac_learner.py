@@ -235,7 +235,6 @@ class SACLearner(Agent):
 
     @partial(jax.jit, static_argnames='utd_ratio')
     def update(self, batch: DatasetDict, utd_ratio: int):
-
         new_agent = self
         for i in range(utd_ratio):
 

@@ -9,7 +9,7 @@ import os
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from pydantic import TypeAdapter
+# from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
@@ -58,7 +58,7 @@ def main(cfg: TrainScriptConfig) -> None:
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
     # Type-checking (and other validation if defined) via Pydantic
-    cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
+    # cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
     #save_resolved_config_as_pkl(cfg)

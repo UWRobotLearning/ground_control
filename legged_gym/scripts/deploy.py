@@ -105,6 +105,7 @@ def main(cfg: DeployScriptConfig):
     # Creates a new DeployScriptConfig object (with type-checking and optional validation) using Pydantic.
     # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
     cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
+    # cfg = merged_cfg
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
     log.info(f"3. Printing merged cfg.")

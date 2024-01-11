@@ -121,3 +121,8 @@ Need to figure out how to either make both of these compatible or maybe use anot
 Note: One way to fix dependency issues is to use Pydantic <2.0, so for example 1.10, since this is the package that requires a version
 of typing extensions which is not compatible with tensorflow_probability
 
+
+## Observation and Actions Details:
+
+### In LocomotionGym (deployment environment):
+1. 

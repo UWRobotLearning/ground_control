@@ -7,7 +7,8 @@ from dataclasses import dataclass
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
-from pydantic import TypeAdapter
+# from pydantic import TypeAdapter
+# from pydantic.dataclasses import dataclass
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
@@ -85,7 +86,9 @@ def main(cfg: PlayScriptConfig):
     merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
     # Creates a new PlayScriptConfig object (with type-checking and optional validation) using Pydantic.
     # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
-    cfg = TypeAdapter(PlayScriptConfig).validate_python(merged_cfg_dict)
+    # cfg = TypeAdapter(PlayScriptConfig).validate_python(merged_cfg_dict)
+    # cfg = PlayScriptConfig(**merged_cfg_dict)
+    cfg = merged_cfg
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
     log.info(f"3. Printing merged cfg.")

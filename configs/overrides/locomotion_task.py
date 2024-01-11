@@ -3,9 +3,9 @@ from typing import Tuple
 from dataclasses import dataclass
 from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
-                                 RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig)
+                                 RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig)
 from configs.overrides.terrain import FlatTerrainConfig
-from configs.overrides.rewards import LeggedGymRewardsConfig
+from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig
 
 #########
 # Task
@@ -34,6 +34,61 @@ class LocomotionTaskConfig(TaskConfig):
     )
     asset: AssetConfig = AssetConfig(
         self_collisions=False,
+    )
+
+
+WITP_INIT_JOINT_ANGLES = {
+    "1_FR_hip_joint": 0.,
+    "1_FR_thigh_joint": 0.9,
+    "1_FR_calf_joint": -1.8,
+
+    "2_FL_hip_joint": 0.,
+    "2_FL_thigh_joint": 0.9,
+    "2_FL_calf_joint": -1.8,
+
+    "3_RR_hip_joint": 0.,
+    "3_RR_thigh_joint": 0.9,
+    "3_RR_calf_joint": -1.8,
+
+    "4_RL_hip_joint": 0.,
+    "4_RL_thigh_joint": 0.9,
+    "4_RL_calf_joint": -1.8
+}
+
+@dataclass
+class WITPLocomotionTaskConfig(TaskConfig):
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        )
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+        default_joint_angles=WITP_INIT_JOINT_ANGLES
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    control: ControlConfig = ControlConfig(
+        decimation=10,
+        # stiffness=20.,
+        # damping=0.5,
+        # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
+        # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
+    )
+    env: EnvConfig = EnvConfig(
+        episode_length_s=5
     )
 
 

@@ -176,6 +176,9 @@ class A1(BaseTask):
             self.gym.refresh_dof_state_tensor(self.sim)
         reset_env_ids, other_post_physics_outputs = self.post_physics_step()
 
+        ## Added by Mateo: Render the camera sensors
+        self.gym.render_all_camera_sensors(self.sim)
+
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.normalization_cfg.clip_observations
         self.obs_buf.clip_(-clip_obs, clip_obs)
@@ -233,6 +236,8 @@ class A1(BaseTask):
         """
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
+        if self.episode_length_buf > self.max_episode_length:
+            print(f"\n\n\n**********Episode should terminate now************\n\n\n")
         self.reset_buf |= self.time_out_buf
         self.termination_buf = torch.logical_and(self.reset_buf, torch.logical_not(self.time_out_buf))
 
@@ -481,6 +486,21 @@ class A1(BaseTask):
         cam_pos = gymapi.Vec3(position[0], position[1], position[2])
         cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
         self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
+
+    ## Added by Mateo: Get third person and FPV RGB images from simulation
+    def get_camera_images(self):
+        images = []
+        for i in range(self.num_envs):
+            third_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][0], gymapi.IMAGE_COLOR)
+            third_person_image = third_person_image.reshape(third_person_image.shape[0], -1, 4)[..., :3]  ## From https://forums.developer.nvidia.com/t/confusion-over-get-camera-image-output/210675
+            first_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][1], gymapi.IMAGE_COLOR)
+            first_person_image = first_person_image.reshape(first_person_image.shape[0], -1, 4)[..., :3]
+            env_cameras = [third_person_image, first_person_image]
+            images.append(env_cameras)
+
+        return images
+
+
 
     #------------- Callbacks --------------
     def _process_rigid_shape_props(self, props, env_id):
@@ -1057,6 +1077,72 @@ class A1(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+
+        ## Added by Mateo:
+        
+        ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
+        self.camera_handles = [[]]
+        for i in range(self.num_envs):
+            self.camera_handles.append([])
+            camera_properties = gymapi.CameraProperties()
+            camera_properties.width = 360
+            camera_properties.height = 240
+
+            # Set a fixed position and look-target for the first camera
+            # position and target location are in the coordinate frame of the environment
+            h1 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
+            camera_transform = gymapi.Transform()
+            camera_transform.p = gymapi.Vec3(2,-1.5,0.9)  ## 3, -2, 0.5
+            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(125))  ## 120
+            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(30))  ## 10
+            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
+            camera_transform.r = camera_rotation
+            self.gym.set_camera_transform(h1, self.envs[i], camera_transform)
+            self.camera_handles[i].append(h1)
+
+            # Attach camera 2 to the first rigid body of the first actor in the environment, which
+            # is the ball. The camera offset is relative to the position of the actor, the camera_rotation
+            # is relative to the global coordinate frame, not the actor's rotation
+            # In even envs cameras are will be following rigid body position and orientation,
+            # in odd env only the position
+            h2 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
+            camera_offset = gymapi.Vec3(0.25, 0, 0.05)
+            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(0))
+            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(10))
+            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
+            actor_handle = self.gym.get_actor_handle(self.envs[i], 0)
+            body_handle = self.gym.get_actor_rigid_body_handle(self.envs[i], actor_handle, 0)  ## TODO: Will attach to the body frame, but should be shifted fwd to match the location of the camera
+
+            self.gym.attach_camera_to_body(h2, self.envs[i], body_handle, gymapi.Transform(camera_offset, camera_rotation), gymapi.FOLLOW_TRANSFORM)
+            self.camera_handles[i].append(h2)
+
+        ## TODO: Add randomized objects (URDF planes with different textures to symbolize different terrain properties)
+            
+        asset_root = "/home/rll/isaacgym/assets"
+        asset_file = "urdf/ball.urdf"
+        self.assets = []
+        ball_asset = self.gym.load_asset(self.sim, asset_root, asset_file)
+        self.assets.append(ball_asset)
+
+        for i in range(self.num_envs):
+            pos = self.env_origins[i].clone()
+            # pos[:2] += torch_utils.torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
+            start_pose.p = gymapi.Vec3(*pos)
+            ball_handle = self.gym.create_actor(self.envs[i], ball_asset, start_pose, "ball", i, 1, 1)
+            self.actor_handles.append(ball_handle)
+
+
+
+            # actor_pose = gymapi.Transform()
+            # actor_pose.p = gymapi.Vec3(3, 0, 0)
+            # # actor_pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
+            # actor_pose.r = gymapi.Quat(1.0, 0.0, 0.0, 0.0)
+            # asset_name = "ball"
+            # handle = self.gym.create_actor(self.envs[i], self.assets[0], actor_pose, asset_name, i, 1, 0)
+            # # import pdb;pdb.set_trace()
+            # self.actor_handles.append(handle)
+
+        
 
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
