@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+    <robot name="box">
+        <link name="base_link">
+            <visual>
+                <geometry>
+                    <box size="1 1 0.05"/>
+                </geometry>
+                <material name="box_color">
+                    <color rgba="0.72 0.0 0.28 1"/>
+                </material>
+            </visual>
+            <collision>
+                <geometry>
+                    <box size="1 1 0.05"/>
+                </geometry>
+            </collision>
+        </link>
+    </robot>
+    

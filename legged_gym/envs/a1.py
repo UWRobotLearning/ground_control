@@ -236,8 +236,6 @@ class A1(BaseTask):
         """
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
-        if self.episode_length_buf > self.max_episode_length:
-            print(f"\n\n\n**********Episode should terminate now************\n\n\n")
         self.reset_buf |= self.time_out_buf
         self.termination_buf = torch.logical_and(self.reset_buf, torch.logical_not(self.time_out_buf))
 
@@ -311,8 +309,8 @@ class A1(BaseTask):
         self.base_quat[:] = self.root_states[:, 3:7]
         self.base_lin_vel[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
-        self.projected_gravity[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.gravity_vec)
-        self.base_heights[:] = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        self.projected_gravity[:] = torch_utils.quat_rotate_inverse(self.base_quat[0].unsqueeze(0), self.gravity_vec)
+        self.base_heights[:] = torch.mean(self.root_states[[0],2].unsqueeze(1) - self.measured_heights, dim=1)  ## Assumes legged robot is actor 0
         self.dof_accel[:] = (self.last_dof_vel - self.dof_vel) / self.dt
         self.action_change[:] = self.actions - self.last_actions
         self.collisions[:] = torch.sum(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1, dim=1)
@@ -333,7 +331,7 @@ class A1(BaseTask):
 
         # cost of transport
         gravity = np.linalg.norm(self.sim_cfg.gravity)
-        speed = torch.norm(self.base_lin_vel, dim=-1) + 1e-6
+        speed = torch.norm(self.base_lin_vel[0].unsqueeze(0), dim=-1) + 1e-6
         self.cost_of_transport[:] = self.power / (self.robot_mass*gravity*speed)
 
         # feet air time
@@ -400,10 +398,10 @@ class A1(BaseTask):
         for sensor in sensors:
             if sensor == "base_ang_vel":
                 scale = self.obs_scales.ang_vel if normalize else 1.
-                obs_list.append(self.base_ang_vel * scale)
+                obs_list.append(self.base_ang_vel[[0]] * scale)
             elif sensor == "base_lin_vel":
                 scale = self.obs_scales.lin_vel if normalize else 1.
-                obs_list.append(self.base_lin_vel * scale)
+                obs_list.append(self.base_lin_vel[[0]] * scale)
             elif sensor == "base_mass":
                 scale = self.obs_scales.base_mass if normalize else 1.
                 obs_list.append(self.base_mass.unsqueeze(1) * scale)
@@ -441,15 +439,15 @@ class A1(BaseTask):
                 scale = self.obs_scales.stiffness if normalize else 1.
                 obs_list.append(p_gain * scale)
             elif sensor == "terrain_height":
-                heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.)
+                heights = torch.clip(self.root_states[[0], 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.)
                 if normalize:
                     heights *= self.obs_scales.height_measurements
                 obs_list.append(heights)
             elif sensor == "yaw_rate":
                 scale = self.obs_scales.ang_vel if normalize else 1.
-                obs_list.append(self.base_ang_vel[..., 2:3] * scale)
+                obs_list.append(self.base_ang_vel[[0], 2:3] * scale)
             elif sensor == "z_pos":
-                obs_list.append(self.root_states[..., 2:3])
+                obs_list.append(self.root_states[[0], 2:3])
             else:
                 raise ValueError(f"Sensor not recognized: {sensor}")
 
@@ -582,7 +580,7 @@ class A1(BaseTask):
         env_ids = (self.episode_length_buf % int(self.commands_cfg.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
         self._resample_commands(env_ids)
         if self.commands_cfg.heading_command:
-            forward = torch_utils.quat_apply(self.base_quat, self.forward_vec)
+            forward = torch_utils.quat_apply(self.base_quat[0].unsqueeze(0), self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
             self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
@@ -820,7 +818,7 @@ class A1(BaseTask):
         self.feet_air_time = make_zero_tensor(self.num_envs, self.feet_indices.shape[0])
         self.base_lin_vel = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
-        self.projected_gravity = torch_utils.quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        self.projected_gravity = torch_utils.quat_rotate_inverse(self.base_quat[0].unsqueeze(0), self.gravity_vec)
         self.base_heights = make_zero_tensor(self.num_envs)
         self.dof_accel = torch.zeros_like(self.dof_vel)
         self.action_change = torch.zeros_like(self.actions)
@@ -1117,30 +1115,60 @@ class A1(BaseTask):
             self.camera_handles[i].append(h2)
 
         ## TODO: Add randomized objects (URDF planes with different textures to symbolize different terrain properties)
-            
-        asset_root = "/home/rll/isaacgym/assets"
-        asset_file = "urdf/ball.urdf"
-        self.assets = []
-        ball_asset = self.gym.load_asset(self.sim, asset_root, asset_file)
-        self.assets.append(ball_asset)
-
-        for i in range(self.num_envs):
-            pos = self.env_origins[i].clone()
-            # pos[:2] += torch_utils.torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
-            start_pose.p = gymapi.Vec3(*pos)
-            ball_handle = self.gym.create_actor(self.envs[i], ball_asset, start_pose, "ball", i, 1, 1)
-            self.actor_handles.append(ball_handle)
 
 
+        ## For Method 1:
+        # pad_dims = gymapi.Vec3(100, 100, 0.05)
+        # asset_options = gymapi.AssetOptions()
+        # asset_options.armature = 0.001
+        # asset_options.fix_base_link = True
+        # asset_options.thickness = 0.002
+        # asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
+        # pad_pose = gymapi.Transform()
+        # # pad_pose.p = gymapi.Vec3(0.7, 0.5 * pad_dims.y + 0.001, 0.0)
+        # pad_pose.p = gymapi.Vec3(0, 0, 0.0)
+        # pad_asset = self.gym.create_box(self.sim, pad_dims.x, pad_dims.y, pad_dims.z, asset_options)
 
-            # actor_pose = gymapi.Transform()
-            # actor_pose.p = gymapi.Vec3(3, 0, 0)
-            # # actor_pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
-            # actor_pose.r = gymapi.Quat(1.0, 0.0, 0.0, 0.0)
-            # asset_name = "ball"
-            # handle = self.gym.create_actor(self.envs[i], self.assets[0], actor_pose, asset_name, i, 1, 0)
+
+        # for i in range(self.num_envs):
+            ## Method 1: Load 
+            # pad_props = self.gym.get_asset_rigid_shape_properties(pad_asset)
+            # pad_props[i].friction = 1.0
+            # self.gym.set_asset_rigid_shape_properties(pad_asset, pad_props)
+            # pad_handle = self.gym.create_actor(self.envs[i], pad_asset, pad_pose, "pad", i, 0)
+            # self.actor_handles.append(pad_handle)
+
+            ## Method 2: Load small planes 
+            # asset_folder = "/home/mateo/projects/ground_control/resources/planes_small"
+            # spacing = 1.1
             # # import pdb;pdb.set_trace()
-            # self.actor_handles.append(handle)
+            # for j in range(51):
+            #     friction = j*0.1
+            #     friction_str = f"{friction:0.1f}".replace(".", "-")
+            #     urdf_file = f"plane_{friction_str}.urdf"
+            #     # urdf_file = f"plane_{friction:0.1f}.urdf"
+            #     asset_options = gymapi.AssetOptions()
+            #     asset_options.fix_base_link = True
+            #     plane_asset = self.gym.load_asset(self.sim, asset_folder, urdf_file, asset_options)
+            #     asset_pose = gymapi.Transform()
+            #     asset_pose.p = gymapi.Vec3(j*spacing, 0, 0)
+
+            #     plane_handle = self.gym.create_actor(self.envs[i], plane_asset, asset_pose, f"plane_{friction:0.1f}", i, 0)
+            #     self.actor_handles.append(plane_handle)
+
+            ## Method 3: Load single big plane
+            # asset_folder = "/home/mateo/projects/ground_control/resources/planes_large"
+            # urdf_file = f"plane_1-4.urdf"
+            # asset_options = gymapi.AssetOptions()
+            # asset_options.fix_base_link = True
+            # plane_asset = self.gym.load_asset(self.sim, asset_folder, urdf_file, asset_options)
+            # asset_pose = gymapi.Transform()
+            # asset_pose.p = gymapi.Vec3(0, 0, 0)
+
+            # plane_handle = self.gym.create_actor(self.envs[i], plane_asset, asset_pose, f"plane_1-4", i, 0)
+            # self.actor_handles.append(plane_handle)
+
+
 
         
 
@@ -1293,11 +1321,11 @@ class A1(BaseTask):
     #------------ base link rewards----------------
     def _reward_lin_vel_z(self):
         # Penalize z axis base linear velocity
-        return -torch.square(self.base_lin_vel[:, 2])
+        return -torch.square(self.base_lin_vel[[0], 2])
 
     def _reward_ang_vel_xy(self):
         # Penalize xy axes base angular velocity
-        return -torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+        return -torch.sum(torch.square(self.base_ang_vel[[0], :2]), dim=1)
 
     def _reward_orientation(self):
         # Penalize non flat base orientation
@@ -1378,12 +1406,12 @@ class A1(BaseTask):
     #------------ task rewards----------------
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[[0], :2]), dim=1)
         return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
 
     def _reward_tracking_ang_vel(self):
         # Tracking of angular velocity commands (yaw)
-        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[[0], 2])
         return torch.exp(-ang_vel_error/self.rewards_cfg.tracking_sigma**2)
 
     #-------------------------------------------------
@@ -1399,10 +1427,10 @@ class A1(BaseTask):
 
     #------------ base link diagnostics ----------------
     def _diagnostic_lin_vel_z(self):
-        return self.base_lin_vel[:, 2].abs()
+        return self.base_lin_vel[[0], 2].abs()
 
     def _diagnostic_ang_vel_xy(self):
-        return torch.sum(self.base_ang_vel[:, :2].abs(), dim=1)
+        return torch.sum(self.base_ang_vel[[0], :2].abs(), dim=1)
 
     def _diagnostic_nonflat_orientation(self):
         return torch.sum(self.projected_gravity[:, :2].abs(), dim=1)

@@ -35,7 +35,7 @@ import numpy as np
 import tqdm
 
 import gymnasium as gym
-# import wandb
+import wandb
 # from absl import app, flags
 from flax.training import checkpoints
 from ml_collections import config_flags
@@ -217,9 +217,9 @@ def main(cfg: TrainScriptConfig) -> None:
     kwargs = dict(config)
 
     ## Initialize WandB
-    # wandb.init(project='a1')
-    # wandb_cfg_dict = {**FLAGS.as_dict(), **kwargs, **dict(cfg)}
-    # wandb.config.update(wandb_cfg_dict)
+    wandb.init(project='a1')
+    wandb_cfg_dict = {**FLAGS.as_dict(), **kwargs, **dict(cfg)}
+    wandb.config.update(wandb_cfg_dict)
 
     ## Define our own observation space and action space since these are not directly available in 
     ## the ground_control A1 environment:
@@ -247,6 +247,7 @@ def main(cfg: TrainScriptConfig) -> None:
     ###################################################### 
 
     start_i = 0
+    ep_counter = 0
     replay_buffer = ReplayBuffer(observation_space, action_space,
                                     FLAGS.max_steps)
     replay_buffer.seed(FLAGS.seed)
@@ -337,13 +338,6 @@ def main(cfg: TrainScriptConfig) -> None:
                  next_observations=next_observation))
         observation = next_observation
 
-        # ## This clause will likely be different
-        # if done:
-        #     observation, done = env.reset(), False
-        #     for k, v in info['episode'].items():
-        #         decode = {'r': 'return', 'l': 'length', 't': 'time'}
-        #         wandb.log({f'training/{decode[k]}': v}, step=i)
-
         stop = time.time()
         collection_time = stop - start
 
@@ -359,8 +353,8 @@ def main(cfg: TrainScriptConfig) -> None:
             if i % FLAGS.log_interval == 0:
                 # print(f"Training step: {i}")
                 for k, v in update_info.items():
-                    print({f'training/{k}': v})
-                    # wandb.log({f'training/{k}': v}, step=i)
+                    # print({f'training/{k}': v})
+                    wandb.log({f'training/{k}': v}, step=i)
 
         
 
@@ -368,21 +362,20 @@ def main(cfg: TrainScriptConfig) -> None:
             # print("\n*****DONE*****\n")
             observation, _ = env.reset()
             done = False
-
             rewards_buffer.extend([current_reward_sum])
             lengths_buffer.extend([current_episode_length])
             # import pdb;pdb.set_trace()
             for k, v in info['episode'].items():
-                print({f'training/{k}': v.item()})
-                # wandb.log({f'training/{k}': v.item()}, step=i)
+                # print({f'training/{k}': v.item()})
+                wandb.log({f'training/{k}': v.item()}, step=i)
             ## Check what info gets logged:
             # import pdb;pdb.set_trace()
             # print(f"Cumulative reward: {current_reward_sum}")
             # print(f"Episode length: {current_episode_length}")
-            # wandb.log({'training/cumulative_reward': current_reward_sum}, step=i)
-            # wandb.log({'training/episode_length': current_episode_length}, step=i)
-            # wandb.log({'training/mean_cumulative_reward': statistics.mean(rewards_buffer)}, step=i)
-            # wandb.log({'training/mean_episode_length': statistics.mean(lengths_buffer)}, step=i)
+            wandb.log({'training/cumulative_reward': current_reward_sum}, step=i)
+            wandb.log({'training/episode_length': current_episode_length}, step=i)
+            wandb.log({'training/mean_cumulative_reward': statistics.mean(rewards_buffer)}, step=i)
+            wandb.log({'training/mean_episode_length': statistics.mean(lengths_buffer)}, step=i)
 
             total_time = collection_time + learn_time
             # wandb.log({'training/cumulative_reward/time': current_reward_sum}, step=total_time)
@@ -394,45 +387,18 @@ def main(cfg: TrainScriptConfig) -> None:
             current_reward_sum = 0
             current_episode_length = 0
 
-            if i % 100 == 0:
+            if ep_counter % 100 == 0:  ## TODO: Replace with hydra variable
+                print("It's been 100 episodes")
                 ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
                 ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
 
-                # wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=i)
-                # wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=i)
+                # import pdb;pdb.set_trace()
+                wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=i)
+                wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=i)
 
             ep_scene_images = []
             ep_fpv_images = []
-
-            
-
-
-
-        
-
-        ## This will also be different since we don't have an evaluation environment. Can still save checkpoint though
-        # if i % FLAGS.eval_interval == 0:
-        #     if not FLAGS.real_robot:
-        #         eval_info = evaluate(agent,
-        #                              eval_env,
-        #                              num_episodes=FLAGS.eval_episodes)
-        #         for k, v in eval_info.items():
-        #             wandb.log({f'evaluation/{k}': v}, step=i)
-
-        #     checkpoints.save_checkpoint(chkpt_dir,
-        #                                 agent,
-        #                                 step=i + 1,
-        #                                 keep=20,
-        #                                 overwrite=True)
-
-        #     try:
-        #         shutil.rmtree(buffer_dir)
-        #     except:
-        #         pass
-
-        #     os.makedirs(buffer_dir, exist_ok=True)
-        #     with open(os.path.join(buffer_dir, f'buffer_{i+1}'), 'wb') as f:
-        #         pickle.dump(replay_buffer, f)
+            ep_counter += 1
 
     log.info("4. Exit Cleanly")
     env.exit()
