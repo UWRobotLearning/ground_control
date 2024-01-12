@@ -39,7 +39,7 @@ setup(
 					'torch',
 					'torchvision',
 					'torchaudio',
-					'pydantic'
+					# 'pydantic'
 					],
 		extras_require={
 			"deploy": ['robot_deployment']  #local_dep('robot_deployment')]  # needs to be installed manually

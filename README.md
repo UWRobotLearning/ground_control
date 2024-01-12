@@ -122,6 +122,28 @@ Note: One way to fix dependency issues is to use Pydantic <2.0, so for example 1
 of typing extensions which is not compatible with tensorflow_probability
 
 
+## Easier instructions that worked on Desktop:
+
+First, comment out pydantic in ground_control/setup.py
+```python
+conda create -n a1_test python=3.8
+conda activate a1_test
+pip install -U "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+cd ~/projects/isaacgym/python/
+pip install -e .
+export LD_LIBRARY_PATH=/home/mateo/miniconda3/envs/a1_test/lib
+cd ground_control/
+conda install -c conda-forge gcc=12.1.0
+python autosetup.py --deploy
+pip install tfp-nightly[jax]
+cd witp
+pip install -e .
+pip install wandb
+pip install ml_collections
+pip install flax
+pip install moviepy imageio
+```
+
 ## Observation and Actions Details:
 
 ### In LocomotionGym (deployment environment):
