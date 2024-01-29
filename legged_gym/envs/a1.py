@@ -62,6 +62,8 @@ REWARDS_LOG_NAMES = dict(
     alive=f"{EPISODE_REWARDS}/safety/alive",
     tracking_lin_vel=f"{EPISODE_REWARDS}/task/tracking_lin_vel",
     tracking_ang_vel=f"{EPISODE_REWARDS}/task/tracking_ang_vel",
+    witp_abs_dyaw=f"{EPISODE_REWARDS}/task/witp_abs_dyaw",
+    witp_cos_pitch_times_lin_vel=f"{EPISODE_REWARDS}/task/witp_cos_pitch_times_lin_vel",
 )
 
 EPISODE_DIAGNOSTICS = "Diagnostics"
@@ -164,20 +166,24 @@ class A1(BaseTask):
                 self.actions.clip_(limits[0], limits[1])
             else:
                 raise NotImplementedError()
-
+            
         # step physics and render each frame
         self.render()
         for _ in range(self.control_cfg.decimation):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
-            if self.device == 'cpu':
-                self.gym.fetch_results(self.sim, True)
+            # if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
         reset_env_ids, other_post_physics_outputs = self.post_physics_step()
 
         ## Added by Mateo: Render the camera sensors
+        self.gym.step_graphics(self.sim)
         self.gym.render_all_camera_sensors(self.sim)
+        self.gym.start_access_image_tensors(self.sim)
+        ## TODO: Mateo: If I needed to do something with the images, such as add them to observations, I should do this here.
+        self.gym.end_access_image_tensors(self.sim)
 
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.normalization_cfg.clip_observations
@@ -359,6 +365,8 @@ class A1(BaseTask):
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+        if "witp_reward_scale" in self.rewards_cfg:
+            self.rew_buf[:] *= self.rewards_cfg.witp_reward_scale  ## Not needed when not doing Walk in the Park
         if self.rewards_cfg.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -386,7 +394,7 @@ class A1(BaseTask):
             self.commands[:, 2] = ang_vel
 
         sensors = self.observation_cfg.sensors + self.observation_cfg.critic_privileged_sensors
-        self.critic_obs_buf = self._compute_observations(sensors)
+        self.critic_obs_buf = self._compute_observations(sensors, self.normalization_cfg.normalize)
         # add noise if needed
         if self.add_noise:
             obs = self.critic_obs_buf[..., :self.num_obs]
@@ -448,6 +456,9 @@ class A1(BaseTask):
                 obs_list.append(self.base_ang_vel[[0], 2:3] * scale)
             elif sensor == "z_pos":
                 obs_list.append(self.root_states[[0], 2:3])
+            elif sensor == "base_quat":
+                scale = self.obs_scales.base_quat if normalize else 1
+                obs_list.append(self.base_quat[0].unsqueeze(0) * scale)
             else:
                 raise ValueError(f"Sensor not recognized: {sensor}")
 
@@ -546,8 +557,12 @@ class A1(BaseTask):
             self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             for i in range(len(props)):
-                self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                if (self.control_cfg.joint_lower_limit is None) and (self.control_cfg.joint_upper_limit is None):
+                    self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                    self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                else:
+                    self.dof_pos_limits[i, 0] = self.control_cfg.joint_lower_limit[i]
+                    self.dof_pos_limits[i, 1] = self.control_cfg.joint_upper_limit[i]
                 self.dof_vel_limits[i] = props["velocity"][i].item()
                 self.torque_limits[i] = props["effort"][i].item()
                 # soft limits
@@ -1224,7 +1239,8 @@ class A1(BaseTask):
             p_gain=12,
             terrain_height=len(self.terrain_cfg.measured_points_x)*len(self.terrain_cfg.measured_points_y),
             yaw_rate=1,
-            z_pos=1
+            z_pos=1,
+            base_quat=4,
         )
 
         if self.domain_rand_cfg.push_robots:
@@ -1413,7 +1429,26 @@ class A1(BaseTask):
         # Tracking of angular velocity commands (yaw)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[[0], 2])
         return torch.exp(-ang_vel_error/self.rewards_cfg.tracking_sigma**2)
+    
+    #------------ witp rewards----------------
+    def _reward_witp_abs_dyaw(self):
+        # Penalize any angular velocity
+        dyaw_abs = torch.abs(self.base_ang_vel[[0], 2])
+        return -dyaw_abs
 
+    def _reward_witp_cos_pitch_times_lin_vel(self):
+        # Reward forward velocity times cos(pitch)
+        from dm_control.utils import rewards
+        move_speed = 0.5  ## m/s
+        roll, pitch, yaw = torch_utils.get_euler_xyz(self.base_quat[[0]])
+        cos_pitch = torch.cos(pitch).cpu().numpy()  ## This is wrong, this is dpitch, want just pitch
+        x_velocity = self.base_lin_vel[[0], 0].cpu().numpy()
+        tolerance = rewards.tolerance(cos_pitch * x_velocity,
+                               bounds=(move_speed, 2 * move_speed),
+                               margin=2 * move_speed,
+                               value_at_margin=0,
+                               sigmoid='linear')
+        return torch.from_numpy(tolerance).to(self.device)
     #-------------------------------------------------
     #------------ diagnostic functions----------------
     #-------------------------------------------------

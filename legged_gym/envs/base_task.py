@@ -36,7 +36,7 @@ class BaseTask:
             self.device = 'cpu'
 
         # graphics device for rendering, -1 for no rendering
-        self.graphics_device_id = self.sim_device_id if not self.headless else -1
+        self.graphics_device_id = self.sim_device_id  ## if not self.headless else -1 ## Commented out by Mateo so that we can render cameras in headless mode
 
         self._parse_cfg()
 

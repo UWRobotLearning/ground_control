@@ -9,6 +9,9 @@ import os
 from collections import deque
 import time
 import statistics
+from PIL import Image
+import imageio
+import cv2
 
 # hydra / config related imports
 import hydra
@@ -30,7 +33,7 @@ from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experi
 import os
 import pickle
 import shutil
-
+import jax
 import numpy as np
 import tqdm
 
@@ -59,6 +62,7 @@ class Flags:
     eval_episodes: int = 1
     log_interval: int = 1000
     eval_interval: int = 1000
+    video_interval: int = 20
     batch_size: int = 256
     max_steps: int = int(1e5)
     start_training: int = int(1e3)
@@ -98,10 +102,11 @@ class TrainScriptConfig:
     iterations: int = 5000 
     sim_device: str = "cuda:0"
     rl_device: str = "cuda:0"
-    headless: bool = False
+    headless: bool = True
     checkpoint_root: str = from_repo_root("./witp_checkpoints")  ## ""
     logging_root: str = from_repo_root("./witp_experiment_logs")
     episode_buffer_len: int = 100
+    name: str = ""
     task: TaskConfig = WITPLocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
 
@@ -122,6 +127,7 @@ def obs_to_nn_input(observation):
     if isinstance(observation, torch.Tensor):
         observation = observation.detach().cpu().numpy()
     obs = observation.squeeze()
+    # obs = jax.device_put(obs, jax.devices()[1])
 
     return obs
 
@@ -136,41 +142,13 @@ def action_to_env_input(action):
     action = torch.Tensor(action_copy).view(1, -1)
     return action
 
-def clip_actions(action):
-    '''
-    Walk in the Park requires joint limits to learn. Here we clip the action to the right joint limits.
-    '''
-    INIT_QPOS = np.asarray([0.05, 0.7, -1.4] * 4)
-    ACTION_OFFSET = np.asarray([0.2, 0.4, 0.4] * 4)
 
-    lower_bound = INIT_QPOS - ACTION_OFFSET
-    upper_bound = INIT_QPOS + ACTION_OFFSET
+def create_gif_from_numpy_array(frames_array, filename, fps=10):
+    # OpenCV expects the dimensions to be (height, width) instead of (width, height)
+    frames_array = frames_array.transpose(0, 2, 3, 1)
+    frames_list = [frame for frame in frames_array]
+    imageio.mimwrite(filename, frames_list)
 
-    action = np.clip(action, lower_bound, upper_bound)
-
-    return action
-
-def clip_and_norm_actions(action):
-    '''
-    Walk in the Park requires joint limits to learn. Here we clip the action to the right joint limits, and we also normalize so that
-    the action is bounded by -1, 1 approximately.
-    '''
-    INIT_QPOS = np.asarray([0.05, 0.7, -1.4] * 4)
-    ACTION_OFFSET = np.asarray([0.2, 0.4, 0.4] * 4)
-
-    lower_bound = INIT_QPOS - ACTION_OFFSET
-    upper_bound = INIT_QPOS + ACTION_OFFSET
-
-    min_action = -1 + np.zeros((12, ))
-
-    max_action = 1 + np.zeros((12, ))
-
-    action = lower_bound + (upper_bound - lower_bound) * (
-            (action - min_action) / (max_action - min_action)
-        )
-    action = np.clip(action, lower_bound, upper_bound)
-
-    return action
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: TrainScriptConfig) -> None:
@@ -217,7 +195,10 @@ def main(cfg: TrainScriptConfig) -> None:
     kwargs = dict(config)
 
     ## Initialize WandB
-    wandb.init(project='a1')
+    if cfg.name == "":
+        wandb.init(project='a1')
+    else:
+        wandb.init(project='a1', name=cfg.name)
     wandb_cfg_dict = {**FLAGS.as_dict(), **kwargs, **dict(cfg)}
     wandb.config.update(wandb_cfg_dict)
 
@@ -261,6 +242,15 @@ def main(cfg: TrainScriptConfig) -> None:
 
     ep_scene_images = []
     ep_fpv_images = []
+    ep_scene_path = '/home/mateo/projects/ground_control/training_videos/scene'
+    ep_fpv_path = '/home/mateo/projects/ground_control/training_videos/fpv'
+    if cfg.name != "":
+        ep_scene_path += "_" + cfg.name
+        ep_fpv_path += "_" + cfg.name
+    if not os.path.exists(ep_scene_path):
+        os.makedirs(ep_scene_path)
+    if not os.path.exists(ep_fpv_path):
+        os.makedirs(ep_fpv_path)
     ###################################################### 
     # Reset environment
     ###################################################### 
@@ -276,7 +266,6 @@ def main(cfg: TrainScriptConfig) -> None:
     for i in tqdm.tqdm(range(start_i, FLAGS.max_steps),
                        smoothing=0.1,
                        disable=not FLAGS.tqdm):
-        # import pdb;pdb.set_trace()
         ## Convert observation to be of usable form:
         start = time.time()
         observation = obs_to_nn_input(observation)
@@ -286,17 +275,12 @@ def main(cfg: TrainScriptConfig) -> None:
         else:
             action, agent = agent.sample_actions(observation)
 
-        ## TODO: Limit action for WITP
-        action = clip_and_norm_actions(action)
-
+        ## Note: Action clipping now happens inside the environment, can be set in config.
         ## Convert action to be of usable form
         env_action = action_to_env_input(action)
 
-
         ## Environment step
         next_observation, _, reward, done, info = env.step(env_action)
-        # print(f"Iteration {i}")
-        # print(f"Reward: {reward}")
 
         ## Convert next_observation, reward, done, info into usable forms
         next_observation = obs_to_nn_input(next_observation)
@@ -312,16 +296,6 @@ def main(cfg: TrainScriptConfig) -> None:
         images = env.get_camera_images()
         ep_scene_images.append(np.transpose(images[0][0], (2, 0, 1)))
         ep_fpv_images.append(np.transpose(images[0][1], (2, 0, 1)))
-
-        # ## TODO: I think the logic in the block below is correct now.
-        # ### For debugging purposes:
-        # if 'time_outs' in info:
-        #     print("*********")
-        #     print(f"Iteration {i}")
-        #     print("time_outs in info")
-        #     time_outs = info["time_outs"]
-        #     print(f"Info time_outs.item: {time_outs.item()}")
-        #     print("*********")
 
         if not done or ('time_outs' in info and info["time_outs"].item()):
             mask = 1.0
@@ -351,50 +325,39 @@ def main(cfg: TrainScriptConfig) -> None:
             stop = time.time()
             learn_time = stop - start
             if i % FLAGS.log_interval == 0:
-                # print(f"Training step: {i}")
                 for k, v in update_info.items():
-                    # print({f'training/{k}': v})
                     wandb.log({f'training/{k}': v}, step=i)
 
         
 
         if done:
-            # print("\n*****DONE*****\n")
             observation, _ = env.reset()
             done = False
             rewards_buffer.extend([current_reward_sum])
             lengths_buffer.extend([current_episode_length])
-            # import pdb;pdb.set_trace()
             for k, v in info['episode'].items():
-                # print({f'training/{k}': v.item()})
                 wandb.log({f'training/{k}': v.item()}, step=i)
-            ## Check what info gets logged:
-            # import pdb;pdb.set_trace()
-            # print(f"Cumulative reward: {current_reward_sum}")
-            # print(f"Episode length: {current_episode_length}")
             wandb.log({'training/cumulative_reward': current_reward_sum}, step=i)
             wandb.log({'training/episode_length': current_episode_length}, step=i)
             wandb.log({'training/mean_cumulative_reward': statistics.mean(rewards_buffer)}, step=i)
             wandb.log({'training/mean_episode_length': statistics.mean(lengths_buffer)}, step=i)
 
             total_time = collection_time + learn_time
-            # wandb.log({'training/cumulative_reward/time': current_reward_sum}, step=total_time)
-            # wandb.log({'training/episode_length/time': current_episode_length}, step=total_time)
-            # wandb.log({'training/mean_cumulative_reward/time': statistics.mean(rewards_buffer)}, step=total_time)
-            # wandb.log({'training/mean_episode_length/time': statistics.mean(lengths_buffer)}, step=total_time)
-
             
             current_reward_sum = 0
             current_episode_length = 0
 
-            if ep_counter % 100 == 0:  ## TODO: Replace with hydra variable
-                print("It's been 100 episodes")
+            if ep_counter % FLAGS.video_interval == 0:  
                 ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
                 ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
 
-                # import pdb;pdb.set_trace()
                 wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=i)
                 wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=i)
+
+                ep_scene_filename = os.path.join(ep_scene_path, f'ep_{ep_counter}.gif')
+                ep_fpv_filename = os.path.join(ep_fpv_path, f'ep_{ep_counter}.gif')
+                create_gif_from_numpy_array(ep_scene_images_stacked, ep_scene_filename, fps=10)
+                create_gif_from_numpy_array(ep_fpv_images_stacked, ep_fpv_filename, fps=10)
 
             ep_scene_images = []
             ep_fpv_images = []

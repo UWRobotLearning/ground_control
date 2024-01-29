@@ -3,7 +3,7 @@ from typing import Tuple
 from dataclasses import dataclass
 from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
-                                 RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig)
+                                 RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig, NormalizationConfig)
 from configs.overrides.terrain import FlatTerrainConfig
 from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig
 
@@ -59,9 +59,19 @@ WITP_INIT_JOINT_ANGLES = {
 class WITPLocomotionTaskConfig(TaskConfig):
     terrain: TerrainConfig = FlatTerrainConfig()
     rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+    # observation: ObservationConfig = ObservationConfig(
+    #     sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+    #     critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    # )
     observation: ObservationConfig = ObservationConfig(
-        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
-        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        sensors=("motor_pos_unshifted", "motor_vel", "last_action", "base_quat", "base_ang_vel", "base_lin_vel"),
+        critic_privileged_sensors=(),
+    )
+    normalization: NormalizationConfig = NormalizationConfig(
+        normalize=False
+    )
+    noise: NoiseConfig = NoiseConfig(
+        add_noise=False
     )
     domain_rand: DomainRandConfig = DomainRandConfig(
         friction_range=(0.4, 2.5),
@@ -82,8 +92,11 @@ class WITPLocomotionTaskConfig(TaskConfig):
     )
     control: ControlConfig = ControlConfig(
         decimation=10,
-        # stiffness=20.,
-        # damping=0.5,
+        clip_setpoint=True,
+        joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        # stiffness=dict(joint=60.),  #20.,
+        # damping=dict(joint=10.),  #0.5,
         # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
         # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
     )

@@ -107,6 +107,8 @@ class ControlConfig:
 
     action_scale: float = 1.
     clip_setpoint: bool = False
+    joint_lower_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
+    joint_upper_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
 
     # number of control action updates @ sim dt per policy dt
     decimation: int = 4
@@ -190,10 +192,13 @@ class RewardsConfig:
         stand_still: float = 0.
         feet_contact_forces: float = 0.
         feet_contact_force_change: float = 0.
+        witp_abs_dyaw: float = 0.
+        witp_cos_pitch_times_lin_vel: float = 0.
     scales: RewardScalesConfig = RewardScalesConfig()
 
 @dataclass
 class NormalizationConfig:
+    normalize: bool = True
     clip_observations: float = 100.
     clip_actions: float = 100.
 
@@ -208,6 +213,7 @@ class NormalizationConfig:
         base_mass: float = 0.2
         stiffness: float = 0.01
         damping: float = 1.
+        base_quat: float = 1.
     obs_scales: NormalizationObsScalesConfig = NormalizationObsScalesConfig()
 
 @dataclass
