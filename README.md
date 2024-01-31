@@ -138,10 +138,7 @@ python autosetup.py --deploy
 pip install tfp-nightly[jax]
 cd witp
 pip install -e .
-pip install wandb
-pip install ml_collections
-pip install flax
-pip install moviepy imageio
+pip install wandb ml_collections flax moviepy imageio
 ```
 
 ## Observation and Actions Details:
