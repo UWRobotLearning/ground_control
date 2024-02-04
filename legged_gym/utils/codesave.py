@@ -5,25 +5,38 @@ import os
 import subprocess
 from git import Repo, Actor
 from git.exc import InvalidGitRepositoryError
+import logging
 
-# Resolves commit hash in this repo:
-# - If autocommit is enabled and new changes are made, autocommits and returns the new commit's hash.
-# - Otherwise, returns the latest commit hash. If force_manual_commit is enabled, forces user to
+# Creates/saves commit hashes in this repo (autocommitting changes if needed)
+# and in the log repo (for codesaving). For commits in this repo:
+# - If autocommit is enabled and new changes are made, autocommits and saves the new commit's hash.
+# - Otherwise, saves the latest commit hash. If force_manual_commit is enabled, forces user to
 #   commit all work manually before running.
-def resolve_commit_hash(cfg):
+# For commits in the log repo, if codesave_to_logs is enabled, creates a new commit and saves it
+# to the logs of the current experiment. Otherwise saves an empty hash. Both commits are saved in
+# the "code_commits.txt" file in the experiment log folder.
+def handle_codesave(cfg):
+    latest_commit_hash, codesave_autocommit_hash = "", ""
+    log = logging.getLogger(__name__)
+    # Handle latest hash for this (main, development) repo
     if cfg.autocommit:
-        return autocommit(commit_message=cfg.autocommit_message, push=cfg.autocommit_push)
-    return check_commit(cfg.force_manual_commit)
-
-# Resolves commit hash in the log repo (for code-saving), if codesave_to_logs is enabled.
-# Otherwise returns None since no commit hash is tracked in the log repo.
-def resolve_codesave(cfg):
+        latest_commit_hash = autocommit(commit_message=cfg.autocommit_message, push=cfg.autocommit_push)
+    else:
+        latest_commit_hash = check_commit(cfg.force_manual_commit)
+        log.info(f"Didn't autocommit to development repo, latest commit: {latest_commit_hash}")
+    # Handle commit hash for codesave repo if enabled (otherwise stays empty)
     if cfg.codesave_to_logs:
-        return codesave_in_logs(logs_root=cfg.log_dir,
-                                codesave_dir=cfg.codesave_dir_in_logs,
-                                commit_message=cfg.autocommit_message,
-                                push=cfg.codesave_push)
-    return ""
+        codesave_autocommit_hash = codesave_in_logs(logs_root=cfg.log_dir,
+                                                    codesave_dir=cfg.codesave_dir_in_logs,
+                                                    commit_message=cfg.autocommit_message,
+                                                    push=cfg.codesave_push)
+    # Save both hashes to the log repo (which the script should be in due to Hydra,
+    # need to change this path if that changes in the future)
+    with open('code_commits.txt', 'a') as f:
+        f.write(f'latest_commit_hash: {latest_commit_hash}\n')
+        f.write(f'codesave_autocommit_hash: {codesave_autocommit_hash}\n')
+    log.info("Successfully saved relevant commits in the experiment log folder!")
+    return latest_commit_hash, codesave_autocommit_hash
 
 # Checks if all changes to this repo have been committed, including untracked files. 
 # If force_commit is enabled and either a git repo is not initialized or there are
@@ -67,6 +80,8 @@ def autocommit(autocommit_root=LEGGED_GYM_ROOT_DIR,  # Path to the root of the r
             raise
     # Check if there are changes to this repo, if so make a new commit
     if repo.is_dirty(untracked_files=True):
+        # Get logger to log the autocommit:
+        log = logging.getLogger(__name__)
         # Add all changes to the index (including untracked files, excluding those in .gitignore)
         repo.git.add("-A")
         # Commit the added changes, naming the author "autocommit" (for easier filtering)
@@ -74,13 +89,15 @@ def autocommit(autocommit_root=LEGGED_GYM_ROOT_DIR,  # Path to the root of the r
         # Print the newly committed files, up to 5 files, useful for seeing changes.
         # Save the changed files to be committed, in order to display them
         committed_files = list(commit.stats.files.keys())
-        print(f"New autocommit to {autocommit_root}:")
+        autocommit_log_str = f"New autocommit to {autocommit_root} with hash {commit.hexsha}: "
         if len(committed_files) > 5:
-            print(", ".join(committed_files[:5]) + " and others...")
+            autocommit_log_str += ", ".join(committed_files[:5]) + " and others..."
         else:
-            print(", ".join(committed_files))
+            autocommit_log_str += ", ".join(committed_files)
+        log.info(autocommit_log_str)
         if push:  # Push if enabled
-            repo.git.push(); print("New commit pushed!")
+            repo.git.push()
+            log.info("New commit pushed!")
     else:
         # Otherwise, output the latest commit hash
         print(f"Code not changed, no need to autocommit to {autocommit_root}")
@@ -88,9 +105,9 @@ def autocommit(autocommit_root=LEGGED_GYM_ROOT_DIR,  # Path to the root of the r
     return repo.head.commit.hexsha
 
 # Keeping a copy of the codebase in a specified path (by logs_root and autocommit_dir) in the 
-# experiment log folder, updates that copy and 'autocommits' new changes to the experiment log
-# folder. Used for code saving without disturbing the working repo. Pushes commits if enabled.
-def codesave_in_logs(logs_root="../experiment_logs",   # The path to the experiment log folder (absolute or relative from ground_control)           
+# specified log folder, updates that copy and 'autocommits' new changes to the log folder.
+# Used for code saving without disturbing the working repo. Pushes commits if enabled.
+def codesave_in_logs(logs_root="../experiment_logs",   # The path to the specified log folder (absolute or relative from ground_control)           
                      codesave_dir="codesave",          # The directory path relative from 'logs_root' in which the codebase will be saved
                      commit_message="Autocommit",      # Message for each automatic commit
                      push=False):                      # If enabled, pushes new commits

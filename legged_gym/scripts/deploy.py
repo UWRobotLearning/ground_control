@@ -16,6 +16,7 @@ from configs.definitions import DeploymentConfig
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
+from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.observation_buffer import ObservationBuffer
 from configs.overrides.codesave import NoCodesaveConfig
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
@@ -113,14 +114,18 @@ def main(cfg: DeployScriptConfig):
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
 
-    log.info(f"4. Preparing Isaac environment and runner.")
+    # Handle codesaving after config has been processed.
+    log.info(f"4. Running autocommit/codesave if enabled.")
+    handle_codesave(cfg.codesave)
+
+    log.info(f"5. Preparing Isaac environment and runner.")
     task_cfg = cfg.task
     isaac_env: A1 = hydra.utils.instantiate(task_cfg)
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=isaac_env, _recursive_=False)
 
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
     resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
-    log.info(f"5. Loading policy checkpoint from: {resume_path}.")
+    log.info(f"6. Loading policy checkpoint from: {resume_path}.")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=isaac_env.device)
 
@@ -128,7 +133,7 @@ def main(cfg: DeployScriptConfig):
         export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
         log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
-    log.info(f"6. Instantiating robot deployment environment.")
+    log.info(f"7. Instantiating robot deployment environment.")
     # create robot environment (either in PyBullet or real world)
     deploy_env = LocomotionGymEnv(
         cfg.deployment,
@@ -146,7 +151,7 @@ def main(cfg: DeployScriptConfig):
     all_actions = []
     all_infos = None
 
-    log.info(f"7. Running the inference loop.")
+    log.info(f"8. Running the inference loop.")
     for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
         # Form observation for policy.
         obs = torch.tensor(obs, device=runner.device).float()
@@ -170,7 +175,7 @@ def main(cfg: DeployScriptConfig):
             log.warning("Unsafe, terminating!")
             break
 
-    log.info("8. Exit Cleanly")
+    log.info("9. Exit Cleanly")
     isaac_env.exit()
     # TODO: check if target simulator (pybullet or other) has exit logic
 

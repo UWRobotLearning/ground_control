@@ -18,6 +18,7 @@ from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1
 from rsl_rl.runners import OnPolicyRunner
+from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, 
                                       save_config_as_yaml, from_repo_root)
 
@@ -65,7 +66,11 @@ def main(cfg: TrainScriptConfig) -> None:
     save_config_as_yaml(cfg)
     #save_resolved_config_as_pkl(cfg)
 
-    log.info("2. Initializing Env and Runner")
+    # Handle codesaving after config has been processed.
+    log.info(f"2. Running autocommit/codesave if enabled.")
+    handle_codesave(cfg.codesave)
+
+    log.info("3. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
     env: A1 = hydra.utils.instantiate(cfg.task)
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
@@ -76,10 +81,10 @@ def main(cfg: TrainScriptConfig) -> None:
         log.info(f"Loading model from: {resume_path}")
         runner.load(resume_path)
 
-    log.info("3. Now Training")
+    log.info("4. Now Training")
     runner.learn()
 
-    log.info("4. Exit Cleanly")
+    log.info("5. Exit Cleanly")
     env.exit()
 
 if __name__ == "__main__":
