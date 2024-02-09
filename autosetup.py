@@ -1,5 +1,5 @@
 import os           # For path processing and navigation
-import sys          # For sys.executable, access to the Python path 
+import sys          # For sys.executable, access to the Python path
 import subprocess   # For calling commands (pip and apt)
 import argparse     # For parsing arguments passed to the script
 import shutil       # For moving/manipulating multiple paths/folders
@@ -21,8 +21,7 @@ def main(args: argparse.Namespace):
     # Absolute path to the root of this repo (the 'ground_control' folder)
     project_root: os.PathLike = os.path.dirname(os.path.realpath(__file__))
 
-
-    # Install isaacgym, skip if already installed, throw a FileNotFoundError if it's not installed 
+    # Install isaacgym, skip if already installed, throw a FileNotFoundError if it's not installed
     # and cannot be found in the same parent directory.
     print("1: Installing the 'isaacgym' library...")
     local_pip_install('isaacgym', os.path.join(project_root, '../isaacgym/python'))
@@ -31,7 +30,7 @@ def main(args: argparse.Namespace):
     print("2: Installing rsl_rl...")
     local_pip_install('rsl_rl', os.path.join(project_root, 'rsl_rl'))
 
-    # Install this project (ground_control, with all other dependencies except for deployment). 
+    # Install this project (ground_control, with all other dependencies except for deployment).
     # Re-install if already installed, throw an error if setup.py not found.
     print("3: Installing 'ground_control' (this project)...")
     local_pip_install('ground_control', project_root, reinstall=True)
@@ -40,7 +39,7 @@ def main(args: argparse.Namespace):
     if not args.deploy:
         print("Successfully finished (without deployment setup)!")
         return
-    
+
     # Install apt dependencies (asks user for sudo password), fail if apt fails, otherwise continue.
     print("4: [DEPLOY] Installing Boots, LCM, CMake via apt...")
     subprocess.run("sudo apt install -y libboost-all-dev liblcm-dev cmake", shell=True, check=True)
@@ -49,7 +48,7 @@ def main(args: argparse.Namespace):
     print("5: [DEPLOY] Building unitree_legged_sdk...")
     # Go to the source code directory for the package, make a build folder (remove old one if exists),
     # and compile the source code. Then place the robot_interface package at the root of robot_deployment.
-    os.chdir('robot_deployment/third_party/unitree_legged_sdk')
+    os.chdir(os.path.join(project_root, 'robot_deployment/third_party/unitree_legged_sdk'))
     if os.path.isdir('./build'):
         shutil.rmtree('./build')
     os.mkdir('build')
@@ -67,7 +66,7 @@ def main(args: argparse.Namespace):
     print("7: [DEPLOY] Re-install 'ground_control' (this project) with deployment option...")
     subprocess.run(
         args=[sys.executable, "-m", "pip", "install", "-e", ".[deploy]"],
-        cwd=project_root, 
+        cwd=project_root,
         check=True
     )
 
@@ -76,7 +75,7 @@ def main(args: argparse.Namespace):
 # Given the package name (as accessed via pip) and the absolute path to a local package's root folder (containing setup.py)
 # tries to install the package in editable mode from that path. By default, if the package is already installed, then it skips
 # the installation and prints a message to the user, this can be overriden by setting reinstall=True. Otherwise, if the package
-# cannot be found in the given absolute path, throws a FileNotFoundError with an appropriate message.  
+# cannot be found in the given absolute path, throws a FileNotFoundError with an appropriate message.
 def local_pip_install(package_name: str, absolute_path_to_package: os.PathLike, reinstall=False) -> None:
     if not reinstall:
         pip_show = subprocess.run(
