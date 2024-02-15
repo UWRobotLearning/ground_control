@@ -107,6 +107,8 @@ class ControlConfig:
 
     action_scale: float = 1.
     clip_setpoint: bool = False
+    joint_lower_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
+    joint_upper_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
 
     # number of control action updates @ sim dt per policy dt
     decimation: int = 4
@@ -165,6 +167,8 @@ class RewardsConfig:
     max_contact_force: float = 100. # forces above this value are penalized
     foot_air_time_threshold: float = 0.5 # [s]
 
+    scale_all: float = 1.  ## Multiplies the total sum of reward
+
     @dataclass
     class RewardScalesConfig:
         lin_vel_z: float = 0.
@@ -194,6 +198,7 @@ class RewardsConfig:
 
 @dataclass
 class NormalizationConfig:
+    normalize: bool = True
     clip_observations: float = 100.
     clip_actions: float = 100.
 

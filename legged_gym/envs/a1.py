@@ -68,6 +68,8 @@ EPISODE_DIAGNOSTICS = "Diagnostics"
 DIAGNOSTICS_LOG_NAMES = dict(
     action=f"{EPISODE_DIAGNOSTICS}/action/action",
     action_change=f"{EPISODE_DIAGNOSTICS}/action/action_change",
+    lin_vel_x=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_x",
+    lin_vel_y=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_y",
     lin_vel_z=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_z",
     ang_vel_xy=f"{EPISODE_DIAGNOSTICS}/base/ang_vel_xy",
     nonflat_orientation=f"{EPISODE_DIAGNOSTICS}/base/nonflat_orientation",
@@ -363,6 +365,7 @@ class A1(BaseEnv):
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+        self.rew_buf[:] *= self.rewards_cfg.scale_all
         if self.rewards_cfg.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -390,7 +393,7 @@ class A1(BaseEnv):
             self.commands[:, 2] = ang_vel
 
         sensors = self.observation_cfg.sensors + self.observation_cfg.critic_privileged_sensors
-        self.critic_obs_buf = self._compute_observations(sensors)
+        self.critic_obs_buf = self._compute_observations(sensors, self.normalization_cfg.normalize)
         # add noise if needed
         if self.add_noise:
             obs = self.critic_obs_buf[..., :self.num_obs]
@@ -452,6 +455,9 @@ class A1(BaseEnv):
                 obs_list.append(self.base_ang_vel[..., 2:3] * scale)
             elif sensor == "z_pos":
                 obs_list.append(self.root_states[..., 2:3])
+            elif sensor == "base_quat":
+                scale = self.obs_scales.base_quat if normalize else 1
+                obs_list.append(self.base_quat * scale)
             else:
                 raise ValueError(f"Sensor not recognized: {sensor}")
 
@@ -548,8 +554,12 @@ class A1(BaseEnv):
             self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             for i in range(len(props)):
-                self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                if (self.control_cfg.joint_lower_limit is None) and (self.control_cfg.joint_upper_limit is None):
+                    self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                    self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                else:
+                    self.dof_pos_limits[i, 0] = self.control_cfg.joint_lower_limit[i]
+                    self.dof_pos_limits[i, 1] = self.control_cfg.joint_upper_limit[i]
                 self.dof_vel_limits[i] = props["velocity"][i].item()
                 self.torque_limits[i] = props["effort"][i].item()
                 # soft limits
@@ -1166,7 +1176,8 @@ class A1(BaseEnv):
             p_gain=12,
             terrain_height=len(self.terrain_cfg.measured_points_x)*len(self.terrain_cfg.measured_points_y),
             yaw_rate=1,
-            z_pos=1
+            z_pos=1,
+            base_quat=4,
         )
 
         if self.domain_rand_cfg.push_robots:
@@ -1368,6 +1379,12 @@ class A1(BaseEnv):
         return torch.mean(self.action_change.abs(), dim=1)
 
     #------------ base link diagnostics ----------------
+    def _diagnostic_lin_vel_x(self):
+        return self.base_lin_vel[:, 0].abs()
+    
+    def _diagnostic_lin_vel_y(self):
+        return self.base_lin_vel[:, 1].abs()
+    
     def _diagnostic_lin_vel_z(self):
         return self.base_lin_vel[:, 2].abs()
 
