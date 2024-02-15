@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
-from pydantic import TypeAdapter
+# from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
@@ -92,7 +92,7 @@ def main(cfg: DeployScriptConfig):
     loaded_cfg = OmegaConf.load(latest_config_filepath)
 
     log.info("2. Merging loaded config, defaults and current top-level config.")
-    del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
+    # del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
     merged_cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
@@ -104,8 +104,8 @@ def main(cfg: DeployScriptConfig):
     merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
     # Creates a new DeployScriptConfig object (with type-checking and optional validation) using Pydantic.
     # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
-    cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
-    # cfg = merged_cfg
+    # cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
+    cfg = merged_cfg
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
     log.info(f"3. Printing merged cfg.")

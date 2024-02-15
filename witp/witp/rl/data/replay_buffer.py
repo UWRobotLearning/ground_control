@@ -1,6 +1,6 @@
 ## Modified from jaxrl5
 import collections
-from typing import Optional, Union
+from typing import Optional, Union, Dict
 
 import gymnasium as gym
 import gymnasium.spaces
@@ -38,6 +38,8 @@ def _insert_recursively(
     elif isinstance(dataset_dict, dict):
         assert dataset_dict.keys() == data_dict.keys()
         for k in dataset_dict.keys():
+            if k == "observation_labels":
+                continue
             _insert_recursively(dataset_dict[k], data_dict[k], insert_index)
     else:
         raise TypeError()

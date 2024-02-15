@@ -1,7 +1,7 @@
 ## Modified from jaxrl5
 from functools import partial
 from random import sample
-from typing import Dict, Iterable, Optional, Tuple, Union
+from typing import Dict, Iterable, Optional, Tuple, Union, List
 
 import jax
 import jax.numpy as jnp
@@ -15,13 +15,16 @@ DatasetDict = Dict[str, DataType]
 
 
 def _check_lengths(dataset_dict: DatasetDict, dataset_len: Optional[int] = None) -> int:
-    for v in dataset_dict.values():
+    # import ipdb;ipdb.set_trace()
+    for k,v in dataset_dict.items():
         if isinstance(v, dict):
             dataset_len = dataset_len or _check_lengths(v, dataset_len)
         elif isinstance(v, np.ndarray):
             item_len = len(v)
             dataset_len = dataset_len or item_len
             assert dataset_len == item_len, "Inconsistent item lengths in the dataset."
+        elif k == "observation_labels":
+            continue
         else:
             raise TypeError("Unsupported type.")
     return dataset_len
@@ -101,8 +104,11 @@ class Dataset(object):
         if keys is None:
             keys = self.dataset_dict.keys()
 
-        import ipdb;ipdb.set_trace()
+        # import ipdb;ipdb.set_trace()
         for k in keys:
+            if k == "observation_labels":
+                batch[k] = self.dataset_dict[k]
+                continue
             if isinstance(self.dataset_dict[k], dict):
                 batch[k] = _sample(self.dataset_dict[k], indx)
             else:
@@ -223,14 +229,25 @@ class Dataset(object):
                 "'observation' and 'next_observation' need to be in keys."
             assert "observation_labels" in keys, \
                 "sample_select() requires self.dataset_dict to contain 'observation_labels', use sample() instead."
-        
+            
+        selected_indices = [self.dataset_dict["observation_labels"][label] for label in include_labels]
         for k in keys:
+            if k == "observation_labels": 
+                ## First we need to recompute the right observation_labels ranges, excluding the labels that are not selected
+                idx_lengths = [idx_range[1]-idx_range[0] for idx_range in selected_indices]
+                new_idxs = {}
+                start_i = 0
+                for length, label in zip(idx_lengths, include_labels):
+                    idx_lengths = (start_i, start_i + length)
+                    new_idxs[label] = idx_lengths
+                    start_i = start_i + length
+                batch[k] = new_idxs
+                continue
             if isinstance(self.dataset_dict[k], dict):
                 batch[k] = _sample(self.dataset_dict[k], indx)
             else:
-                if (k == "observation") or (k== "next_observation"):
-                    indices = [self.dataset_dict["observation_labels"][label] for label in include_labels]
-                    ranges = [range(*ind) for ind in indices]
+                if (k == "observations") or (k== "next_observations"):
+                    ranges = [range(*ind) for ind in selected_indices]
                     ranges_exp = [list(range) for range in ranges]  ## Ranges expanded into lists
                     ranges_comb = [ind for ind_range in ranges_exp for ind in ind_range]  ## All ranges combined into single list
                     batch[k] = self.dataset_dict[k][indx, ranges_comb]

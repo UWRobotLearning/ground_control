@@ -36,7 +36,7 @@ class WITPLeggedGymRewardsConfig(RewardsConfig):
     #     soft_dof_pos_limits=10.
     # )
 
-    witp_reward_scale: float = 10
+    scale_all: float = 10
     base_height_target: float = 0.25
 
     scales: RewardsConfig.RewardScalesConfig = RewardsConfig.RewardScalesConfig(

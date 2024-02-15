@@ -39,6 +39,7 @@ setup(
 					'torch',
 					'torchvision',
 					'torchaudio',
+					'wandb',
 					# 'pydantic'
 					],
 		extras_require={

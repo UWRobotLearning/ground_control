@@ -237,12 +237,10 @@ class SACLearner(Agent):
     def update(self, batch: DatasetDict, utd_ratio: int):
         new_agent = self
         for i in range(utd_ratio):
-
             def slice(x):
                 assert x.shape[0] % utd_ratio == 0
                 batch_size = x.shape[0] // utd_ratio
                 return x[batch_size * i:batch_size * (i + 1)]
-
             mini_batch = jax.tree_util.tree_map(slice, batch)
             new_agent, critic_info = self.update_critic(new_agent, mini_batch)
 

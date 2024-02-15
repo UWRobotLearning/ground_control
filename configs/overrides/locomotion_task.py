@@ -106,7 +106,31 @@ class WITPLocomotionTaskConfig(TaskConfig):
 
 
 
-
+@dataclass
+class ResidualLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_residual.A1Residual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        )
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
 
 
 

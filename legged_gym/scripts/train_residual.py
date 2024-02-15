@@ -7,6 +7,7 @@ from dataclasses import dataclass, asdict
 from typing import Any, Tuple
 import os
 from collections import deque
+from flax.core import frozen_dict
 import time
 import statistics
 from PIL import Image
@@ -20,10 +21,12 @@ from omegaconf import OmegaConf
 # from pydantic import TypeAdapter  ## Commented out by Mateo because this conflicts with tf_probability
 
 from configs.definitions import TaskConfig, TrainConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig
+from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, ResidualLocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
-from legged_gym.envs.a1 import A1
+# from legged_gym.envs.a1 import A1
+from legged_gym.envs.a1_residual import A1Residual
+from legged_gym.utils.helpers import export_policy_as_jit
 # from rsl_rl.runners import OnPolicyRunner  ## Commented out by Mateo because we are trying to train with witp code.
 from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, save_config_as_yaml,
                                       from_repo_root)
@@ -53,6 +56,7 @@ from typing import Optional
 # config.update("jax_disable_jit", True)
 #######
 #####
+from rsl_rl.runners import OnPolicyRunner
 
 @dataclass
 class Flags:
@@ -65,7 +69,7 @@ class Flags:
     video_interval: int = 20
     batch_size: int = 256
     max_steps: int = int(1e5)
-    start_training: int = int(1e3)
+    start_training: int = 0 ##int(1e3)
     tqdm: bool = True
     wandb: bool = True
     save_video: bool = False
@@ -82,7 +86,7 @@ class Flags:
 ## Mateo note: I am going to modify the parameters here to be different than the ones in train.py. Most importantly, num_envs will be
 ## set to 1 for ease of debugging for now, and might potentially change the task and train configs. Going to change where things get stored.
 @dataclass
-class TrainScriptConfig:
+class TrainResidualScriptConfig:
     """
     A config used with the `train.py` script. Also has top-level
     aliases for commonly used hyperparameters. Feel free to add
@@ -105,15 +109,17 @@ class TrainScriptConfig:
     headless: bool = True
     checkpoint_root: str = from_repo_root("./witp_checkpoints")  ## ""
     logging_root: str = from_repo_root("./witp_experiment_logs")
+    checkpoint: int = -1
+    export_policy: bool = True
     episode_buffer_len: int = 100
     name: str = ""
-    task: TaskConfig = WITPLocomotionTaskConfig()
+    task: TaskConfig = ResidualLocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
 cs = ConfigStore.instance()
-cs.store(name="config", node=TrainScriptConfig)
+cs.store(name="config", node=TrainResidualScriptConfig)
 
 
 def obs_to_nn_input(observation):
@@ -151,7 +157,7 @@ def create_gif_from_numpy_array(frames_array, filename, fps=10):
 
 
 @hydra.main(version_base=None, config_name="config")
-def main(cfg: TrainScriptConfig) -> None:
+def main(cfg: TrainResidualScriptConfig) -> None:
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
     # Type-checking (and other validation if defined) via Pydantic
@@ -160,10 +166,28 @@ def main(cfg: TrainScriptConfig) -> None:
     save_config_as_yaml(cfg)
     #save_resolved_config_as_pkl(cfg)
 
-    log.info("2. Initializing Env and Runner")
+    log.info("2. Initializing Env and Runner with Pretrained Policy")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
-    env: A1 = hydra.utils.instantiate(cfg.task)
+    task_cfg = cfg.task
+    env: A1Residual = hydra.utils.instantiate(task_cfg)
+
+    experiment_path = cfg.checkpoint_root
+    runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
+    resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
+    runner.load(resume_path)
+    log.info(f"2.5 Loading policy checkpoint from: {resume_path}.")
+    policy = runner.get_inference_policy(device=env.device)
+    if cfg.export_policy:
+        export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
+        log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
+
     # runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
+    log.info(f"4. Preparing environment and runner.")
+    
+    env.load_pretrained_policy(policy)
+    env.reset()
+    obs = env.get_observations()
+    critic_obs = env.get_critic_observations()
 
     # if cfg.train.runner.resume_root != "":
     #     experiment_dir = get_latest_experiment_path(cfg.train.runner.resume_root)
@@ -196,32 +220,47 @@ def main(cfg: TrainScriptConfig) -> None:
 
     ## Initialize WandB
     if cfg.name == "":
-        wandb.init(project='a1')
+        wandb.init(project='a1_residual')
     else:
-        wandb.init(project='a1', name=cfg.name)
+        wandb.init(project='a1_residual', name=cfg.name)
     wandb_cfg_dict = {**FLAGS.as_dict(), **kwargs, **dict(cfg)}
     wandb.config.update(wandb_cfg_dict)
 
     ## Define our own observation space and action space since these are not directly available in 
     ## the ground_control A1 environment:
-
+    ## By default, fine-tuning algorithm will only use the sensors in cfg.task.observation.sensors, NOT the cfg.task.observation.critic_privileged_sensors
     num_obs = env.num_obs
     obs_limit = cfg.task.normalization.clip_observations
     observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(num_obs,))
 
     num_actions = env.num_actions
     action_limit = cfg.task.normalization.clip_actions
-    # action_space = gym.spaces.Box(low=-action_limit, high=action_limit, shape=(num_actions,))
-    action_space = gym.spaces.Box(
-        low=np.array([-0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697]),
-        high=np.array([0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916]),
-        shape=(num_actions,)
-    )
+    action_space = gym.spaces.Box(low=-action_limit, high=action_limit, shape=(num_actions,))
+    # action_space = gym.spaces.Box(
+    #     low=np.array([-0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697]),
+    #     high=np.array([0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916]),
+    #     shape=(num_actions,)
+    # )
+    sensors =  cfg.task.observation.sensors ## + cfg.task.observation.critic_privileged_sensors
+    observation_labels = {sensor_name:(0, 0) for sensor_name in sensors}
+    observation_labels['projected_gravity'] = (0, 3)
+    observation_labels['commands'] = (3, 6)
+    observation_labels['motor_pos'] = (6, 18)
+    observation_labels['motor_vel'] = (18, 30)
+    observation_labels['last_action'] = (30, 42)
+    observation_labels['yaw_rate'] = (42, 43)
+    # observation_labels['base_lin_vel'] = (43, 46)
+    # observation_labels['base_ang_vel'] = (46, 49)
+    # observation_labels['terrain_height'] = (49, 50)
+    # observation_labels['friction'] = (50, 51)
+    # observation_labels['base_mass'] = (51, 52)
+    replay_buffer = ReplayBuffer(observation_space, action_space,
+                                    FLAGS.max_steps, next_observation_space=observation_space,
+                                    observation_labels=observation_labels)
+    replay_buffer.seed(FLAGS.seed)
 
     agent = SACLearner.create(FLAGS.seed, observation_space,
                               action_space, **kwargs)
-    
-    # import pdb;pdb.set_trace()
 
     ###################################################### 
     # Set up replay buffer
@@ -229,18 +268,6 @@ def main(cfg: TrainScriptConfig) -> None:
 
     start_i = 0
     ep_counter = 0
-    observation_labels = {
-        'qpos': (0, 12),
-        'qvel': (12, 24),
-        'prev_action': (24, 36),
-        'base_quat': (36, 40),
-        'base_ang_vel': (40, 43),
-        'base_lin_vel': (43, 46)
-    }
-    replay_buffer = ReplayBuffer(observation_space, action_space,
-                                    FLAGS.max_steps, next_observation_space=observation_space,
-                                    observation_labels=observation_labels)
-    replay_buffer.seed(FLAGS.seed)
 
     # Set up reward and episode length buffers for logging purposes
     rewards_buffer = deque(maxlen=cfg.episode_buffer_len)
@@ -251,8 +278,8 @@ def main(cfg: TrainScriptConfig) -> None:
 
     ep_scene_images = []
     ep_fpv_images = []
-    ep_scene_path = '/home/mateo/projects/ground_control/training_videos/scene'
-    ep_fpv_path = '/home/mateo/projects/ground_control/training_videos/fpv'
+    ep_scene_path = '/home/mateo/projects/ground_control/training_videos/scene_residual'
+    ep_fpv_path = '/home/mateo/projects/ground_control/training_videos/fpv_residual'
     if cfg.name != "":
         ep_scene_path += "_" + cfg.name
         ep_fpv_path += "_" + cfg.name
@@ -263,7 +290,7 @@ def main(cfg: TrainScriptConfig) -> None:
     ###################################################### 
     # Reset environment
     ###################################################### 
-    observation, _ = env.reset()
+    observation_torch, _ = env.reset()
     done = False
 
     collection_time = 0
@@ -277,7 +304,7 @@ def main(cfg: TrainScriptConfig) -> None:
                        disable=not FLAGS.tqdm):
         ## Convert observation to be of usable form:
         start = time.time()
-        observation = obs_to_nn_input(observation)
+        observation = obs_to_nn_input(observation_torch)
 
         if i < FLAGS.start_training:
             action = action_space.sample()
@@ -286,13 +313,16 @@ def main(cfg: TrainScriptConfig) -> None:
 
         ## Note: Action clipping now happens inside the environment, can be set in config.
         ## Convert action to be of usable form
-        env_action = action_to_env_input(action)
+        env_action = action_to_env_input(action).to(env.device)
+
+        ## Get/set residual in environment (stored as a self.pretrained_action)
+        pretrained_action = env.get_pretrained_action(observation_torch)
 
         ## Environment step
-        next_observation, _, reward, done, info = env.step(env_action)
+        next_observation_torch, _, reward, done, info = env.step(env_action)
 
         ## Convert next_observation, reward, done, info into usable forms
-        next_observation = obs_to_nn_input(next_observation)
+        next_observation = obs_to_nn_input(next_observation_torch)
         reward = reward.detach().cpu().item()
         done = done.detach().cpu().item()
 
@@ -330,6 +360,10 @@ def main(cfg: TrainScriptConfig) -> None:
         ## This clause will largely be the same!
         if i >= FLAGS.start_training:
             batch = replay_buffer.sample(FLAGS.batch_size * FLAGS.utd_ratio)
+            if "observation_labels" in batch:
+                batch = dict(batch)
+                batch.pop("observation_labels")
+                batch = frozen_dict.freeze(batch)
             agent, update_info = agent.update(batch, FLAGS.utd_ratio)
 
             stop = time.time()
@@ -341,7 +375,7 @@ def main(cfg: TrainScriptConfig) -> None:
         
 
         if done:
-            observation, _ = env.reset()
+            observation_torch, _ = env.reset()
             done = False
             rewards_buffer.extend([current_reward_sum])
             lengths_buffer.extend([current_episode_length])

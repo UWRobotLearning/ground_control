@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable
 import numpy as np
 import os
 import logging
@@ -20,6 +20,10 @@ from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig,
                                  NormalizationConfig, NoiseConfig, ViewerConfig,
                                  SimConfig)
 log = logging.getLogger(__name__)
+
+## Added by Mateo for logging
+from witp.rl.data.replay_buffer import ReplayBuffer
+from witp.rl.data.dataset import Dataset
 
 # TODO: generate from URDF?
 # from origin of trunk
@@ -70,8 +74,6 @@ EPISODE_DIAGNOSTICS = "Diagnostics"
 DIAGNOSTICS_LOG_NAMES = dict(
     action=f"{EPISODE_DIAGNOSTICS}/action/action",
     action_change=f"{EPISODE_DIAGNOSTICS}/action/action_change",
-    lin_vel_x=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_x",
-    lin_vel_y=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_y",
     lin_vel_z=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_z",
     ang_vel_xy=f"{EPISODE_DIAGNOSTICS}/base/ang_vel_xy",
     nonflat_orientation=f"{EPISODE_DIAGNOSTICS}/base/nonflat_orientation",
@@ -96,7 +98,7 @@ DIAGNOSTICS_LOG_NAMES = dict(
     terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level"
 )
 
-class A1(BaseTask):
+class A1Residual(BaseTask):
     def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
                  commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
                  asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
@@ -122,6 +124,7 @@ class A1(BaseTask):
         self.noise_cfg = noise
         self.viewer_cfg = viewer
         self.sim_cfg = sim
+        
         super().__init__(env, observation, sim)
         self.init_done = False
 
@@ -143,6 +146,10 @@ class A1(BaseTask):
         self._prepare_diagnostics()
         self.init_done = True
 
+    def load_pretrained_policy(self, policy: Callable[[torch.Tensor], torch.Tensor]):
+        self.policy = policy
+        # self.policy.eval()
+
     def reset(self):
         """ Reset all robots. Additionally, if we use a history of observations,
         reset history of observations to all be the current observation.
@@ -151,6 +158,7 @@ class A1(BaseTask):
         self.obs_buf_history.reset(
             torch.arange(self.num_envs, device=self.device),
             self.obs_buf[torch.arange(self.num_envs, device=self.device)])
+        self.pretrained_action = torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False)
         obs, critic_obs, *_ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         return obs, critic_obs
 
@@ -160,6 +168,9 @@ class A1(BaseTask):
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
+        ## NOTE: Using residual actions here
+        # import ipdb;ipdb.set_trace()
+        actions = actions + self.pretrained_action
         clip_actions = self.normalization_cfg.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
         if self.control_cfg.clip_setpoint:
@@ -367,7 +378,8 @@ class A1(BaseTask):
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
-        self.rew_buf[:] *= self.rewards_cfg.scale_all
+        if "witp_reward_scale" in self.rewards_cfg:
+            self.rew_buf[:] *= self.rewards_cfg.witp_reward_scale  ## Not needed when not doing Walk in the Park
         if self.rewards_cfg.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -500,8 +512,7 @@ class A1(BaseTask):
     # ## Added by Mateo: Get third person and FPV RGB images from simulation
     def get_camera_images(self):
         images = []
-        # for i in range(self.num_envs):
-        for i in range(1):
+        for i in range(self.num_envs):
             third_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][0], gymapi.IMAGE_COLOR)
             third_person_image = third_person_image.reshape(third_person_image.shape[0], -1, 4)[..., :3]  ## From https://forums.developer.nvidia.com/t/confusion-over-get-camera-image-output/210675
             first_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][1], gymapi.IMAGE_COLOR)
@@ -512,6 +523,12 @@ class A1(BaseTask):
         return images
 
 
+    def get_pretrained_action(self, obs):
+        # import ipdb;ipdb.set_trace()
+        with torch.no_grad():
+            # self.pretrained_action = torch.zeros(self.num_envs, self.num_actions, device=self.device)
+            self.pretrained_action = self.policy(obs.detach()).to(self.device)
+        return self.pretrained_action
 
     #------------- Callbacks --------------
     def _process_rigid_shape_props(self, props, env_id):
@@ -1113,10 +1130,9 @@ class A1(BaseTask):
 
         ## Added by Mateo:
         
-        # ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
+        ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
         self.camera_handles = [[]]
-        # for i in range(self.num_envs):
-        for i in range(1):
+        for i in range(self.num_envs):
             self.camera_handles.append([])
             camera_properties = gymapi.CameraProperties()
             camera_properties.width = 360
@@ -1453,35 +1469,27 @@ class A1(BaseTask):
     
     #------------ witp rewards----------------
     def _reward_witp_abs_dyaw(self):
+        # Assumes only one robot
+        assert self.num_envs == 1, "Walk in the Park adaptation only works for num_envs = 1"
         # Penalize any angular velocity
         dyaw_abs = torch.abs(self.base_ang_vel[:, 2])
         return -dyaw_abs
 
     def _reward_witp_cos_pitch_times_lin_vel(self):
+        # Assumes only one robot 
+        assert self.num_envs == 1, "Walk in the Park adaptation only works for num_envs = 1"
         # Reward forward velocity times cos(pitch)
+        from dm_control.utils import rewards
         move_speed = 0.5  ## m/s
         roll, pitch, yaw = torch_utils.get_euler_xyz(self.base_quat)
-        cos_pitch = torch.cos(pitch)
-        x_velocity = self.base_lin_vel[:, 0]
-        # from dm_control.utils import rewards
-        # tolerance = rewards.tolerance(cos_pitch * x_velocity,
-        #                        bounds=(move_speed, 2 * move_speed),
-        #                        margin=2 * move_speed,
-        #                        value_at_margin=0,
-        #                        sigmoid='linear')
-        cos_pitch_times_vel = cos_pitch * x_velocity
-        bounds = (move_speed, 2 * move_speed)
-        lower, upper = bounds
-        margin = 2*move_speed
-        in_bounds = torch.logical_and(lower <= cos_pitch_times_vel, cos_pitch_times_vel <= upper)
-        d = torch.where(cos_pitch_times_vel < lower, lower - cos_pitch_times_vel, cos_pitch_times_vel - upper) / margin
-        value_at_margin = 0.1
-        scale = 1-value_at_margin
-        scaled_x = cos_pitch_times_vel*scale
-        sigmoid = torch.where(abs(scaled_x) < 1, 1 - scaled_x, 0.0)
-        value = torch.where(in_bounds, 1.0, sigmoid)
-        return value
-
+        cos_pitch = torch.cos(pitch).cpu().numpy()  ## This is wrong, this is dpitch, want just pitch
+        x_velocity = self.base_lin_vel[:, 0].cpu().numpy()
+        tolerance = rewards.tolerance(cos_pitch * x_velocity,
+                               bounds=(move_speed, 2 * move_speed),
+                               margin=2 * move_speed,
+                               value_at_margin=0,
+                               sigmoid='linear')
+        return torch.from_numpy(tolerance).to(self.device)
     #-------------------------------------------------
     #------------ diagnostic functions----------------
     #-------------------------------------------------
@@ -1493,16 +1501,10 @@ class A1(BaseTask):
     def _diagnostic_action_change(self):
         return torch.mean(self.action_change.abs(), dim=1)
 
-    #------------ base link diagnostics ----------------    
-    def _diagnostic_lin_vel_x(self):
-        return self.base_lin_vel[:, 0].abs()
-    
-    def _diagnostic_lin_vel_y(self):
-        return self.base_lin_vel[:, 1].abs()
-
+    #------------ base link diagnostics ----------------
     def _diagnostic_lin_vel_z(self):
         return self.base_lin_vel[:, 2].abs()
-    
+
     def _diagnostic_ang_vel_xy(self):
         return torch.sum(self.base_ang_vel[:, :2].abs(), dim=1)
 

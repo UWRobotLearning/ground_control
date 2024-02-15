@@ -167,6 +167,8 @@ class RewardsConfig:
     max_contact_force: float = 100. # forces above this value are penalized
     foot_air_time_threshold: float = 0.5 # [s]
 
+    scale_all: float = 1.  ## Multiplies the total sum of reward
+
     @dataclass
     class RewardScalesConfig:
         lin_vel_z: float = 0.
@@ -330,6 +332,11 @@ class RunnerConfig:
     # load and resume
     resume_root: str = ""
     checkpoint: int = -1 # -1 = last saved model
+
+    # Logging with Weights and Biases
+    use_wandb: bool = False #True
+    log_videos: bool = False #True
+    video_frequency: Optional[int] = 1 ## How often to save videos, every <frequency> episodes
 
 @dataclass
 class TrainConfig:
