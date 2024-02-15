@@ -325,6 +325,11 @@ class RunnerConfig:
     resume_root: str = ""
     checkpoint: int = -1 # -1 = last saved model
 
+    # Logging with Weights and Biases
+    use_wandb: bool = True
+    log_videos: bool = True
+    video_frequency: Optional[int] = 1 ## How often to save videos, every <frequency> episodes
+
 @dataclass
 class CodesaveConfig:
     force_manual_commit: bool = True  # Forces all work to be committed before running.

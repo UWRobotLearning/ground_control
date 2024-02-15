@@ -171,10 +171,17 @@ class A1(BaseEnv):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
-            if self.device == 'cpu':
-                self.gym.fetch_results(self.sim, True)
+            # if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
         reset_env_ids, other_post_physics_outputs = self.post_physics_step()
+
+        ## Render the camera sensors
+        self.gym.step_graphics(self.sim)
+        self.gym.render_all_camera_sensors(self.sim)
+        self.gym.start_access_image_tensors(self.sim)
+        ## TODO: If you need to do something with the images, such as add them to observations, you should do this here.
+        self.gym.end_access_image_tensors(self.sim)
 
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.normalization_cfg.clip_observations
@@ -481,6 +488,19 @@ class A1(BaseEnv):
         cam_pos = gymapi.Vec3(position[0], position[1], position[2])
         cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
         self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
+
+    def get_camera_images(self):
+        images = []
+        # for i in range(self.num_envs):
+        for i in range(1):  ## Only get an image from the 0th env. Not sure how well this scales with num envs
+            third_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][0], gymapi.IMAGE_COLOR)
+            third_person_image = third_person_image.reshape(third_person_image.shape[0], -1, 4)[..., :3]  ## From https://forums.developer.nvidia.com/t/confusion-over-get-camera-image-output/210675
+            first_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][1], gymapi.IMAGE_COLOR)
+            first_person_image = first_person_image.reshape(first_person_image.shape[0], -1, 4)[..., :3]
+            env_cameras = [third_person_image, first_person_image]
+            images.append(env_cameras)
+
+        return images
 
     #------------- Callbacks --------------
     def _process_rigid_shape_props(self, props, env_id):
@@ -1057,6 +1077,42 @@ class A1(BaseEnv):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+
+        # ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
+        self.camera_handles = [[]]
+        # for i in range(self.num_envs):
+        for i in range(1):  ## Only adds cameras to env 0
+            self.camera_handles.append([])
+            camera_properties = gymapi.CameraProperties()
+            camera_properties.width = 360
+            camera_properties.height = 240
+
+            # Set a fixed position and look-target for the first camera
+            # position and target location are in the coordinate frame of the environment
+            h1 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
+            camera_transform = gymapi.Transform()
+            camera_transform.p = gymapi.Vec3(2,-1.5,0.9)  ## 3, -2, 0.5
+            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(125))  ## 120
+            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(30))  ## 10
+            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
+            camera_transform.r = camera_rotation
+            self.gym.set_camera_transform(h1, self.envs[i], camera_transform)
+            self.camera_handles[i].append(h1)
+
+            # The camera offset is relative to the position of the actor, the camera_rotation
+            # is relative to the global coordinate frame, not the actor's rotation
+            # In even envs cameras are will be following rigid body position and orientation,
+            # in odd env only the position
+            h2 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
+            camera_offset = gymapi.Vec3(0.25, 0, 0.05)
+            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(0))
+            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(10))
+            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
+            actor_handle = self.gym.get_actor_handle(self.envs[i], 0)
+            body_handle = self.gym.get_actor_rigid_body_handle(self.envs[i], actor_handle, 0)  ## TODO: Will attach to the body frame, but should be shifted fwd to match the location of the camera
+
+            self.gym.attach_camera_to_body(h2, self.envs[i], body_handle, gymapi.Transform(camera_offset, camera_rotation), gymapi.FOLLOW_TRANSFORM)
+            self.camera_handles[i].append(h2)
 
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.

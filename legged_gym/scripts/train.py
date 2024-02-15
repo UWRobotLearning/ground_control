@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig, CodesaveConfig
-from configs.overrides.codesave import LogsCodesaveConfig
+from configs.overrides.codesave import LogsCodesaveConfig, NoCodesaveConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
@@ -49,7 +49,7 @@ class TrainScriptConfig:
 
     task: TaskConfig = LocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
-    codesave: CodesaveConfig = LogsCodesaveConfig()
+    codesave: CodesaveConfig = NoCodesaveConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
