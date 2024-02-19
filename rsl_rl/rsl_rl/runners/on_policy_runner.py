@@ -101,27 +101,6 @@ class OnPolicyRunner:
         )
 
     def learn(self, init_at_random_ep_len=False):
-        # Initialize wandb
-        if self.cfg.use_wandb:
-            all_configs = {
-                "runner": asdict(self.cfg),
-                "policy": asdict(self.policy_cfg),
-                "algorith": asdict(self.alg_cfg),
-                "environment": dict(self.env.env_cfg),
-                "observation": dict(self.env.observation_cfg),
-                "terrain": dict(self.env.terrain_cfg),
-                "commands": dict(self.env.commands_cfg),
-                "init_state": dict(self.env.init_state_cfg),
-                "control": dict(self.env.control_cfg),
-                "asset": dict(self.env.asset_cfg),
-                "domain_rand": dict(self.env.domain_rand_cfg),
-                "rewards": dict(self.env.rewards_cfg),
-                "normalization": dict(self.env.normalization_cfg),
-                "noise": dict(self.env.noise_cfg),
-                "viewer": dict(self.env.viewer_cfg),
-                "sim": dict(self.env.sim_cfg)
-            } 
-            wandb.init(project='ground_control', config=all_configs)
         # initialize writer
         if self.log_dir is not None and self.writer is None:
             self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
@@ -138,10 +117,11 @@ class OnPolicyRunner:
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
-        ## To log videos from within Isaac Gym from environment 0
+        # to log videos from within Isaac Gym from environment 0
         ep_scene_images = []
         ep_fpv_images = []
         env_0_ep_count = 0
+        wandb_log_videos = self.cfg.wandb.enable and self.cfg.wandb.log_videos
 
         tot_iter = self.current_learning_iteration + self.cfg.iterations
         for it in range(self.current_learning_iteration, tot_iter):
@@ -154,14 +134,14 @@ class OnPolicyRunner:
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
 
-                    if self.cfg.log_videos:
-                        ## Get camera images for environment 0
+                    if wandb_log_videos:
+                        # get camera images for environment 0
                         images = self.env.get_camera_images()
                         ep_scene_images.append(np.transpose(images[0][0], (2, 0, 1)))
                         ep_fpv_images.append(np.transpose(images[0][1], (2, 0, 1)))
 
                     if self.log_dir is not None:
-                        # Book keeping
+                        # bookkeeping
                         if 'episode' in infos:
                             ep_infos.append(infos['episode'])
                         cur_reward_sum += rewards
@@ -172,16 +152,15 @@ class OnPolicyRunner:
                         cur_reward_sum[new_ids] = 0
                         cur_episode_length[new_ids] = 0
 
-                        ## Reset frames for environment 0
-                        if self.cfg.log_videos:
-                            if (0 in new_ids) and (env_0_ep_count % self.cfg.video_frequency == 0):
-                                if self.cfg.use_wandb:
-                                    ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
-                                    ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
-                                    self._log_wandb_videos(ep_scene_images_stacked, ep_fpv_images_stacked, it)
-                                ep_scene_images = []
-                                ep_fpv_images = []
-                                env_0_ep_count += 1
+                        # reset frames for environment 0
+                        if wandb_log_videos and (0 in new_ids) and \
+                           env_0_ep_count % self.cfg.wandb.video_frequency == 0:
+                            ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
+                            ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
+                            self._log_wandb_videos(ep_scene_images_stacked, ep_fpv_images_stacked, it)
+                            ep_scene_images = []
+                            ep_fpv_images = []
+                            env_0_ep_count += 1
 
                 stop = time.time()
                 collection_time = stop - start
@@ -211,7 +190,7 @@ class OnPolicyRunner:
 
         self._write_scalar_metrics(locs, mean_std, fps)
         self._print_scalar_metrics(locs, mean_std, fps, width, pad)
-        if self.cfg.use_wandb:
+        if self.cfg.wandb.enable:
             self._write_wandb_metrics(locs, mean_std, fps)
 
     def _print_scalar_metrics(self, locs, mean_std, fps, width, pad):
@@ -307,7 +286,6 @@ class OnPolicyRunner:
             wandb.log({"Video/scene": wandb.Video(scene_images, fps=30)}, step=iteration)
             wandb.log({"Video/fpv": wandb.Video(fpv_images, fps=30)}, step=iteration)
 
-
     def save(self, path, infos=None):
         torch.save({
             'model_state_dict': self.alg.actor_critic.state_dict(),
@@ -315,6 +293,8 @@ class OnPolicyRunner:
             'iter': self.current_learning_iteration,
             'infos': infos,
             }, path)
+        if self.cfg.wandb.enable and self.cfg.wandb.log_model:
+            wandb.save(path)
 
     def load(self, path, load_optimizer=True):
         loaded_dict = torch.load(path, map_location='cpu')
