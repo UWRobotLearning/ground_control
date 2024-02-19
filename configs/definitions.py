@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 from omegaconf import OmegaConf
 import numpy as np
 
@@ -107,6 +107,8 @@ class ControlConfig:
 
     action_scale: float = 1.
     clip_setpoint: bool = False
+    joint_lower_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
+    joint_upper_limit: Optional[Tuple[float, float, float, float, float, float, float, float, float, float, float, float]] = None  ## Joint position limits
 
     # number of control action updates @ sim dt per policy dt
     decimation: int = 4
@@ -165,6 +167,8 @@ class RewardsConfig:
     max_contact_force: float = 100. # forces above this value are penalized
     foot_air_time_threshold: float = 0.5 # [s]
 
+    scale_all: float = 1.  ## Multiplies the total sum of reward
+
     @dataclass
     class RewardScalesConfig:
         lin_vel_z: float = 0.
@@ -194,6 +198,7 @@ class RewardsConfig:
 
 @dataclass
 class NormalizationConfig:
+    normalize: bool = True
     clip_observations: float = 100.
     clip_actions: float = 100.
 
@@ -313,6 +318,18 @@ class AlgorithmConfig:
     max_grad_norm: float = 1.
 
 @dataclass
+class WandBConfig:
+    # settings on logging with Weights and Biases (wandb)
+    enable: bool = True # logging with wandb
+    project_name: str = 'ground_control' # name of the project to log to
+    entity: Optional[str] = None # username for sending the logs, set None for default user in wandb
+    log_code: bool = True # code saving (all .py files) to wandb
+    codesave_file_extensions: Tuple[str, ...] = ('.py', '.ipynb', '.txt') # extensions of files to save to wandb
+    log_model: bool = True # log model checkpoints, same freq. as "RunnerConfig.save_interval"
+    log_videos: bool = False # logging of videos on some episodes
+    video_frequency: Optional[int] = 10 # how often to save videos, every <frequency> episodes
+
+@dataclass
 class RunnerConfig:
     num_steps_per_env: int = 24 # per iteration
     iterations: int = "${oc.select: iterations,1500}" # number of policy updates
@@ -325,16 +342,7 @@ class RunnerConfig:
     resume_root: str = ""
     checkpoint: int = -1 # -1 = last saved model
 
-@dataclass
-class CodesaveConfig:
-    force_manual_commit: bool = True  # Forces all work to be committed before running.
-    autocommit: bool = False  # Commits all work (except .gitignore), overrides force_manual_commit.
-    autocommit_push: bool = False  # If autocommit enabled, pushes after autocommits as well.
-    codesave_to_logs: bool = False  # Copies work to a location in the log folder, and autocommits.
-    codesave_push: bool = False  # If codesave_to_logs enabled, pushes after autocommits as well.
-    log_dir: str = "${oc.select: logging_root,../experiment_logs}"  # Path to the log folder root
-    autocommit_message: str = "Autocommit"  # Commit message for code-saving or autocommits
-    codesave_dir_in_logs: str = "codesave"  # Path (relative to the log folder) to save the codebase.
+    wandb: WandBConfig = WandBConfig()
 
 @dataclass
 class TrainConfig:

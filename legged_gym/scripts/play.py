@@ -11,12 +11,10 @@ from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig)
+                                 SimConfig, RunnerConfig, TerrainConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
-from configs.overrides.codesave import NoCodesaveConfig
 from legged_gym.envs.a1 import A1
-from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
@@ -63,7 +61,6 @@ class PlayScriptConfig:
             checkpoint="${checkpoint}"
         ),
     )
-    codesave: CodesaveConfig = NoCodesaveConfig()
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=PlayScriptConfig)
@@ -95,11 +92,7 @@ def main(cfg: PlayScriptConfig):
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
 
-    # Handle codesaving after config has been processed.
-    log.info(f"4. Running autocommit/codesave if enabled.")
-    handle_codesave(cfg.codesave)
-
-    log.info(f"5. Preparing environment and runner.")
+    log.info(f"4. Preparing environment and runner.")
     task_cfg = cfg.task
     env: A1 = hydra.utils.instantiate(task_cfg)
     env.reset()
@@ -108,7 +101,7 @@ def main(cfg: PlayScriptConfig):
 
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
     resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
-    log.info(f"6. Loading policy checkpoint from: {resume_path}.")
+    log.info(f"5. Loading policy checkpoint from: {resume_path}.")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=env.device)
 
@@ -116,7 +109,7 @@ def main(cfg: PlayScriptConfig):
         export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
         log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
-    log.info(f"7. Running interactive play script.")
+    log.info(f"6. Running interactive play script.")
     current_time = time.time()
     num_steps = int(cfg.episode_length_s / env.dt)
     for i in range(num_steps):
@@ -128,7 +121,7 @@ def main(cfg: PlayScriptConfig):
             time.sleep(env.dt - duration)
         current_time = time.time()
 
-    log.info("8. Exit Cleanly")
+    log.info("7. Exit Cleanly")
     env.exit()
 
 if __name__ == '__main__':

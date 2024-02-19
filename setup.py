@@ -40,7 +40,10 @@ setup(
 					'torchvision',
 					'torchaudio',
 					'pydantic',
-					'gitpython'
+					'gitpython',
+					'wandb',
+					'moviepy',
+					'imageio',
 					],
 		extras_require={
 			"deploy": ['robot_deployment']  #local_dep('robot_deployment')]  # needs to be installed manually

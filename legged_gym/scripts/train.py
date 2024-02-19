@@ -4,6 +4,7 @@ import pickle
 from dataclasses import dataclass
 from typing import Any, Tuple
 import os
+import wandb
 
 # hydra / config related imports
 import hydra
@@ -11,14 +12,13 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
-from configs.definitions import TaskConfig, TrainConfig, CodesaveConfig
-from configs.overrides.codesave import LogsCodesaveConfig
+from configs.definitions import TaskConfig, TrainConfig, RunnerConfig, WandBConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
+from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.a1 import A1
 from rsl_rl.runners import OnPolicyRunner
-from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, 
                                       save_config_as_yaml, from_repo_root)
 
@@ -49,7 +49,6 @@ class TrainScriptConfig:
 
     task: TaskConfig = LocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
-    codesave: CodesaveConfig = LogsCodesaveConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -66,9 +65,21 @@ def main(cfg: TrainScriptConfig) -> None:
     save_config_as_yaml(cfg)
     #save_resolved_config_as_pkl(cfg)
 
-    # Handle codesaving after config has been processed.
-    log.info(f"2. Running autocommit/codesave if enabled.")
-    handle_codesave(cfg.codesave)
+    log.info(f"2. Configuring WandB for Experiment Logging")
+    wandb_cfg = cfg.train.runner.wandb
+    if wandb_cfg.enable:
+        wandb_run = wandb.init(
+            project=wandb_cfg.project_name, 
+            entity=wandb_cfg.entity,
+            config=dict(OmegaConf.structured(cfg)),
+            job_type='train'
+        )
+        if wandb_cfg.log_code:
+            wandb_run.log_code(
+                root=LEGGED_GYM_ROOT_DIR, # save the files in the entire ground_control repo
+                # ... only if they end with one of the specified file extensions
+                include_fn=lambda path: any([path.endswith(ext) for ext in wandb_cfg.codesave_file_extensions])
+            )
 
     log.info("3. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
