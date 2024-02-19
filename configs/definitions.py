@@ -325,8 +325,7 @@ class WandBConfig:
     entity: Optional[str] = None # username for sending the logs, set None for default user in wandb
     log_code: bool = True # code saving (all .py files) to wandb
     codesave_file_extensions: Tuple[str, ...] = ('.py', '.ipynb', '.txt') # extensions of files to save to wandb
-    log_model: bool = False # log model checkpoints, same freq. as "RunnerConfig.save_interval"
-    model_name: str = 'ground_control_locomotion' # name of the model to log, if log_model is True
+    log_model: bool = True # log model checkpoints, same freq. as "RunnerConfig.save_interval"
     log_videos: bool = False # logging of videos on some episodes
     video_frequency: Optional[int] = 10 # how often to save videos, every <frequency> episodes
 
