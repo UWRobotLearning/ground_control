@@ -48,13 +48,7 @@ class TrainScriptConfig:
     logging_root: str = from_repo_root("../experiment_logs")
 
     task: TaskConfig = LocomotionTaskConfig()
-    train: TrainConfig = TrainConfig(
-        runner = RunnerConfig(
-            wandb = WandBConfig(
-                log_model=True
-            )
-        )
-    )
+    train: TrainConfig = TrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
