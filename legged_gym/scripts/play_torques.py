@@ -4,7 +4,9 @@ import pickle
 from dataclasses import dataclass
 from typing import Any, Tuple
 import os
+import sys
 import time
+import torch
 
 # hydra / config related imports
 import hydra
@@ -22,7 +24,8 @@ from rsl_rl.runners import OnPolicyRunner
 from legged_gym.utils.helpers import (set_seed, save_resolved_config_as_pkl, 
                                       save_config_as_yaml, from_repo_root)
 
-import torch
+from csv2sim import ReadCsv
+
 
 @dataclass
 class PlayTorquesScriptConfig:
@@ -47,7 +50,7 @@ class PlayTorquesScriptConfig:
 
     task: TaskConfig = LocomotionTaskConfig(
         control = ControlConfig(
-            control_type = "T",
+            control_type = "P",
         ),
         terrain = FlatTerrainConfig(),
         asset = AssetConfig(
@@ -80,15 +83,21 @@ def main(cfg: PlayTorquesScriptConfig) -> None:
 
     log.info(f"3. Running interactive play script.")
     current_time = time.time()
+    
     num_steps = int(cfg.episode_length_s / env.dt)
-    for i in range(num_steps):
-        actions = torch.zeros((1,12))
+    
+    JointTensor = ReadCsv("normaltrot.csv", 'P')
+    csv_steps = len(JointTensor)
+    
+    for i in range(csv_steps):
+        actions = JointTensor[i].reshape((1,12))
         obs, _, _, _, infos, *_ = env.step(actions.detach())
         
         duration = time.time() - current_time
         if duration < env.dt:
             time.sleep(env.dt - duration)
         current_time = time.time()
+        
 
     log.info("4. Exit Cleanly")
     env.exit()
