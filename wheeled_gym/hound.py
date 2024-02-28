@@ -68,8 +68,6 @@ EPISODE_DIAGNOSTICS = "Diagnostics"
 DIAGNOSTICS_LOG_NAMES = dict(
     action=f"{EPISODE_DIAGNOSTICS}/action/action",
     action_change=f"{EPISODE_DIAGNOSTICS}/action/action_change",
-    lin_vel_x=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_x",
-    lin_vel_y=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_y",
     lin_vel_z=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_z",
     ang_vel_xy=f"{EPISODE_DIAGNOSTICS}/base/ang_vel_xy",
     nonflat_orientation=f"{EPISODE_DIAGNOSTICS}/base/nonflat_orientation",
@@ -124,7 +122,7 @@ class A1(BaseEnv):
         self.init_done = False
 
         self.chain_ee = []
-        for ee_name in ["1_FR_foot", "2_FL_foot", "3_RR_foot", "4_RL_foot"]:
+        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
                     open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
@@ -173,17 +171,10 @@ class A1(BaseEnv):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
-            # if self.device == 'cpu':
-            self.gym.fetch_results(self.sim, True)
+            if self.device == 'cpu':
+                self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
         reset_env_ids, other_post_physics_outputs = self.post_physics_step()
-
-        ## Render the camera sensors
-        self.gym.step_graphics(self.sim)
-        self.gym.render_all_camera_sensors(self.sim)
-        self.gym.start_access_image_tensors(self.sim)
-        ## TODO: If you need to do something with the images, such as add them to observations, you should do this here.
-        self.gym.end_access_image_tensors(self.sim)
 
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.normalization_cfg.clip_observations
@@ -365,7 +356,6 @@ class A1(BaseEnv):
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
-        self.rew_buf[:] *= self.rewards_cfg.scale_all
         if self.rewards_cfg.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -393,7 +383,7 @@ class A1(BaseEnv):
             self.commands[:, 2] = ang_vel
 
         sensors = self.observation_cfg.sensors + self.observation_cfg.critic_privileged_sensors
-        self.critic_obs_buf = self._compute_observations(sensors, self.normalization_cfg.normalize)
+        self.critic_obs_buf = self._compute_observations(sensors)
         # add noise if needed
         if self.add_noise:
             obs = self.critic_obs_buf[..., :self.num_obs]
@@ -455,9 +445,6 @@ class A1(BaseEnv):
                 obs_list.append(self.base_ang_vel[..., 2:3] * scale)
             elif sensor == "z_pos":
                 obs_list.append(self.root_states[..., 2:3])
-            elif sensor == "base_quat":
-                scale = self.obs_scales.base_quat if normalize else 1
-                obs_list.append(self.base_quat * scale)
             else:
                 raise ValueError(f"Sensor not recognized: {sensor}")
 
@@ -494,19 +481,6 @@ class A1(BaseEnv):
         cam_pos = gymapi.Vec3(position[0], position[1], position[2])
         cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
         self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
-
-    def get_camera_images(self):
-        images = []
-        # for i in range(self.num_envs):
-        for i in range(1):  ## Only get an image from the 0th env. Not sure how well this scales with num envs
-            third_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][0], gymapi.IMAGE_COLOR)
-            third_person_image = third_person_image.reshape(third_person_image.shape[0], -1, 4)[..., :3]  ## From https://forums.developer.nvidia.com/t/confusion-over-get-camera-image-output/210675
-            first_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][1], gymapi.IMAGE_COLOR)
-            first_person_image = first_person_image.reshape(first_person_image.shape[0], -1, 4)[..., :3]
-            env_cameras = [third_person_image, first_person_image]
-            images.append(env_cameras)
-
-        return images
 
     #------------- Callbacks --------------
     def _process_rigid_shape_props(self, props, env_id):
@@ -554,12 +528,8 @@ class A1(BaseEnv):
             self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             for i in range(len(props)):
-                if (self.control_cfg.joint_lower_limit is None) and (self.control_cfg.joint_upper_limit is None):
-                    self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                    self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                else:
-                    self.dof_pos_limits[i, 0] = self.control_cfg.joint_lower_limit[i]
-                    self.dof_pos_limits[i, 1] = self.control_cfg.joint_upper_limit[i]
+                self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                self.dof_pos_limits[i, 1] = props["upper"][i].item()
                 self.dof_vel_limits[i] = props["velocity"][i].item()
                 self.torque_limits[i] = props["effort"][i].item()
                 # soft limits
@@ -1088,42 +1058,6 @@ class A1(BaseEnv):
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
 
-        # ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
-        self.camera_handles = [[]]
-        # for i in range(self.num_envs):
-        for i in range(1):  ## Only adds cameras to env 0
-            self.camera_handles.append([])
-            camera_properties = gymapi.CameraProperties()
-            camera_properties.width = 360
-            camera_properties.height = 240
-
-            # Set a fixed position and look-target for the first camera
-            # position and target location are in the coordinate frame of the environment
-            h1 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
-            camera_transform = gymapi.Transform()
-            camera_transform.p = gymapi.Vec3(2,-1.5,0.9)  ## 3, -2, 0.5
-            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(125))  ## 120
-            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(30))  ## 10
-            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
-            camera_transform.r = camera_rotation
-            self.gym.set_camera_transform(h1, self.envs[i], camera_transform)
-            self.camera_handles[i].append(h1)
-
-            # The camera offset is relative to the position of the actor, the camera_rotation
-            # is relative to the global coordinate frame, not the actor's rotation
-            # In even envs cameras are will be following rigid body position and orientation,
-            # in odd env only the position
-            h2 = self.gym.create_camera_sensor(self.envs[i], camera_properties)
-            camera_offset = gymapi.Vec3(0.25, 0, 0.05)
-            camera_rotation_1 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 0, 1), np.deg2rad(0))
-            camera_rotation_2 = gymapi.Quat.from_axis_angle(gymapi.Vec3(0, 1, 0), np.deg2rad(10))
-            camera_rotation = (camera_rotation_1 * camera_rotation_2).normalize()
-            actor_handle = self.gym.get_actor_handle(self.envs[i], 0)
-            body_handle = self.gym.get_actor_rigid_body_handle(self.envs[i], actor_handle, 0)  ## TODO: Will attach to the body frame, but should be shifted fwd to match the location of the camera
-
-            self.gym.attach_camera_to_body(h2, self.envs[i], body_handle, gymapi.Transform(camera_offset, camera_rotation), gymapi.FOLLOW_TRANSFORM)
-            self.camera_handles[i].append(h2)
-
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
             Otherwise create a grid.
@@ -1176,8 +1110,7 @@ class A1(BaseEnv):
             p_gain=12,
             terrain_height=len(self.terrain_cfg.measured_points_x)*len(self.terrain_cfg.measured_points_y),
             yaw_rate=1,
-            z_pos=1,
-            base_quat=4,
+            z_pos=1
         )
 
         if self.domain_rand_cfg.push_robots:
@@ -1379,12 +1312,6 @@ class A1(BaseEnv):
         return torch.mean(self.action_change.abs(), dim=1)
 
     #------------ base link diagnostics ----------------
-    def _diagnostic_lin_vel_x(self):
-        return self.base_lin_vel[:, 0].abs()
-    
-    def _diagnostic_lin_vel_y(self):
-        return self.base_lin_vel[:, 1].abs()
-    
     def _diagnostic_lin_vel_z(self):
         return self.base_lin_vel[:, 2].abs()
 
