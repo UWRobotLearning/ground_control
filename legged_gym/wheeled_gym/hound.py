@@ -92,7 +92,7 @@ DIAGNOSTICS_LOG_NAMES = dict(
     terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level"
 )
 
-class A1(BaseEnv):
+class Hound(BaseEnv):
     def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
                  commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
                  asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
