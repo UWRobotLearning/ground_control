@@ -122,7 +122,7 @@ class Hound(BaseEnv):
         self.init_done = False
 
         self.chain_ee = []
-        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel"]:
+        for ee_name in ["FR_wheel", "FL_wheel", "RR_wheel", "RL_wheel"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
                     open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
@@ -999,6 +999,7 @@ class Hound(BaseEnv):
         self.num_dof = self.gym.get_asset_dof_count(robot_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
+        from IPython import embed; embed()
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
 
         # save body names from the asset

@@ -11,7 +11,8 @@ from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig)
+                                 SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig,
+                                 AssetConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from configs.overrides.codesave import NoCodesaveConfig
@@ -20,10 +21,12 @@ from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_l
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 from rsl_rl.runners import OnPolicyRunner
 
-from legged_gym.wheeled_gym import Hound
+from legged_gym.wheeled_gym.hound import Hound
 
 @dataclass
 class PlayScriptConfig:
+    target: str = "legged_gym.wheeled_gym.hound.Hound"
+    asset_file: str = from_repo_root("resources/mushr_description/robots/racecar-mit.urdf")
     checkpoint_root: str = from_repo_root("../experiment_logs/train")
     logging_root: str = from_repo_root("../experiment_logs")
     export_policy: bool = True
@@ -37,6 +40,10 @@ class PlayScriptConfig:
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
     task: TaskConfig = empty_cfg(TaskConfig)(
+        _target_ = "${target}",
+        asset = empty_cfg(AssetConfig)(
+            file = "${asset_file}"
+        ),
         env = empty_cfg(EnvConfig)(
             num_envs = "${num_envs}"
         ),
