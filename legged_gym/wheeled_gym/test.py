@@ -12,12 +12,10 @@ from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig,
+                                 SimConfig, RunnerConfig, TerrainConfig,
                                  AssetConfig, InitStateConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
-from configs.overrides.codesave import NoCodesaveConfig
-from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
 
@@ -85,7 +83,6 @@ class PlayScriptConfig:
             checkpoint="${checkpoint}"
         ),
     )
-    codesave: CodesaveConfig = NoCodesaveConfig()
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=PlayScriptConfig)
@@ -119,7 +116,6 @@ def main(cfg: PlayScriptConfig):
 
     # Handle codesaving after config has been processed.
     log.info(f"4. Running autocommit/codesave if enabled.")
-    handle_codesave(cfg.codesave)
 
     log.info(f"5. Preparing environment and runner.")
     task_cfg = cfg.task
