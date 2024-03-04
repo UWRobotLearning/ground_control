@@ -3,30 +3,33 @@ import logging
 import os.path as osp
 import time
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
+from typing import Dict
 from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
                                  SimConfig, RunnerConfig, TerrainConfig, CodesaveConfig,
-                                 AssetConfig)
+                                 AssetConfig, InitStateConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from configs.overrides.codesave import NoCodesaveConfig
 from legged_gym.utils.codesave import handle_codesave
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
-from rsl_rl.runners import OnPolicyRunner
 
 from legged_gym.wheeled_gym.hound import Hound
+
+from isaacgym import gymapi, gymutil
+gym = gymapi.acquire_gym()
 
 @dataclass
 class PlayScriptConfig:
     target: str = "legged_gym.wheeled_gym.hound.Hound"
-    asset_file: str = from_repo_root("resources/mushr_description/robots/racecar-mit.urdf")
+    asset_file: str = from_repo_root("resources/mushr_description/robots/racecar-mit-phys.urdf")
     checkpoint_root: str = from_repo_root("../experiment_logs/train")
     logging_root: str = from_repo_root("../experiment_logs")
     export_policy: bool = True
@@ -36,6 +39,14 @@ class PlayScriptConfig:
     checkpoint: int = -1
     headless: bool = False 
     device: str = "cpu"
+    init_joint_angles: Dict[str, float] = field(default_factory=lambda: {
+        'chassis_to_back_left_wheel': 0.0,
+        'chassis_to_back_right_wheel': 0.0,
+        'chassis_to_front_left_hinge': 0.0,
+        'front_left_hinge_to_wheel': 0.0,
+        'chassis_to_front_right_hinge': 0.0,
+        'front_right_hinge_to_wheel': 0.0,
+    })
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -61,9 +72,12 @@ class PlayScriptConfig:
         terrain = empty_cfg(TerrainConfig)(
             curriculum = False
         ),
+        init_state = empty_cfg(InitStateConfig)(
+            default_joint_angles = "${init_joint_angles}"
+        ),
         noise = NoNoiseConfig(),
         domain_rand = NoDomainRandConfig()
-    ) 
+    )
     train: TrainConfig = empty_cfg(TrainConfig)(
         device = "${device}",
         log_dir = "${hydra:runtime.output_dir}",
@@ -85,7 +99,7 @@ def main(cfg: PlayScriptConfig):
 
     log.info("2. Merging loaded config, defaults and current top-level config.")
     del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
-    default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
+    default_cfg = {"task": TaskConfig(), "train": TrainConfig(), "init_state": InitStateConfig()}  # default behaviour as defined in "configs/definitions.py"
     merged_cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
         loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
@@ -110,31 +124,36 @@ def main(cfg: PlayScriptConfig):
     log.info(f"5. Preparing environment and runner.")
     task_cfg = cfg.task
     env: Hound = hydra.utils.instantiate(task_cfg)
-    env.reset()
+    sim = env.sim
+    viewer = env.viewer
+    # env.reset()
     obs = env.get_observations()
-    runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
-    experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
-    resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
-    log.info(f"6. Loading policy checkpoint from: {resume_path}.")
-    runner.load(resume_path)
-    policy = runner.get_inference_policy(device=env.device)
+    while not gym.query_viewer_has_closed(viewer):
+        gym.draw_viewer(viewer, sim, True)
+    # runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
-    if cfg.export_policy:
-        export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
-        log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
+    # experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
+    # resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
+    # log.info(f"6. Loading policy checkpoint from: {resume_path}.")
+    # runner.load(resume_path)
+    # policy = runner.get_inference_policy(device=env.device)
 
-    log.info(f"7. Running interactive play script.")
-    current_time = time.time()
-    num_steps = int(cfg.episode_length_s / env.dt)
-    for i in range(num_steps):
-        actions = policy(obs.detach())
-        obs, _, _, _, infos, *_ = env.step(actions.detach())
-        
-        duration = time.time() - current_time
-        if duration < env.dt:
-            time.sleep(env.dt - duration)
-        current_time = time.time()
+    # if cfg.export_policy:
+    #     export_policy_as_jit(runner.alg.actor_critic, cfg.checkpoint_root)
+    #     log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
+
+    # log.info(f"7. Running interactive play script.")
+    # current_time = time.time()
+    # num_steps = int(cfg.episode_length_s / env.dt)
+    # for i in range(num_steps):
+    #     actions = policy(obs.detach())
+    #     obs, _, _, _, infos, *_ = env.step(actions.detach())
+
+    #     duration = time.time() - current_time
+    #     if duration < env.dt:
+    #         time.sleep(env.dt - duration)
+    #     current_time = time.time()
 
     log.info("8. Exit Cleanly")
     env.exit()
