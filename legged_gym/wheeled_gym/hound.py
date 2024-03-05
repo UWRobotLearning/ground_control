@@ -122,7 +122,8 @@ class Hound(BaseEnv):
         self.init_done = False
 
         self.chain_ee = []
-        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel"]:
+        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel",
+                        "laser_model"]:
             self.chain_ee.append(
                 pk.build_serial_chain_from_urdf(
                     open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
@@ -823,6 +824,7 @@ class Hound(BaseEnv):
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         for i in range(self.num_dofs):
+            print(self.dof_names)
             name = self.dof_names[i]
             angle = self.init_state_cfg.default_joint_angles[name]
             self.default_dof_pos[i] = angle
@@ -1036,14 +1038,14 @@ class Hound(BaseEnv):
             start_pose.p = gymapi.Vec3(*pos)
             # rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
             # self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
-            a1_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, "hound", i, int(not self.asset_cfg.self_collisions), 0)
+            hound_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, "hound", i, int(not self.asset_cfg.self_collisions), 0)
             dof_props = self._process_dof_props(dof_props_asset, i)
-            self.gym.set_actor_dof_properties(env_handle, a1_handle, dof_props)
-            body_props = self.gym.get_actor_rigid_body_properties(env_handle, a1_handle)
+            self.gym.set_actor_dof_properties(env_handle, hound_handle, dof_props)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, hound_handle)
             body_props = self._process_rigid_body_props(body_props, i)
-            self.gym.set_actor_rigid_body_properties(env_handle, a1_handle, body_props, recomputeInertia=True)
+            self.gym.set_actor_rigid_body_properties(env_handle, hound_handle, body_props, recomputeInertia=True)
             self.envs.append(env_handle)
-            self.actor_handles.append(a1_handle)
+            self.actor_handles.append(hound_handle)
 
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):

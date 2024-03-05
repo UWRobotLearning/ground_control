@@ -2,6 +2,7 @@ import isaacgym
 import logging
 import os.path as osp
 import time
+import os
 
 from dataclasses import dataclass, field
 import hydra
@@ -121,11 +122,28 @@ def main(cfg: PlayScriptConfig):
 
     log.info(f"5. Preparing environment and runner.")
     task_cfg = cfg.task
-    env: Hound = hydra.utils.instantiate(task_cfg)
-    sim = env.sim
-    viewer = env.viewer
+    physics_engine = gymapi.SIM_PHYSX
+    sim_params = gymapi.SimParams()
+    sim = gym.create_sim(0, 0, physics_engine, sim_params)
+    asset_root = os.path.dirname(cfg.task.asset.file)
+    asset_file = os.path.basename(cfg.task.asset.file)
+    asset_options = gymapi.AssetOptions()
+    robot_asset = gym.load_asset(sim, asset_root, asset_file, asset_options)
+
+    spacing = 5
+    env_lower = gymapi.Vec3(-spacing, -spacing, 0.)
+    env_upper = gymapi.Vec3(spacing, spacing, spacing)
+    start_pose = gymapi.Transform()
+    env_handle = gym.create_env(sim, env_lower, env_upper, 1)
+    hound_handle = gym.create_actor(env_handle, robot_asset, start_pose, "hound", 0, 0, 0)
+    viewer = gym.create_viewer(sim, gymapi.CameraProperties())
+
+    cam_pos = gymapi.Vec3(1, 1, 1)
+    cam_target = gymapi.Vec3(-1, -1, -1)
+    gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
+    # env: Hound = hydra.utils.instantiate(task_cfg)
     # env.reset()
-    obs = env.get_observations()
+    # obs = env.get_observations()
 
     while not gym.query_viewer_has_closed(viewer):
         gym.step_graphics(sim)
@@ -155,7 +173,6 @@ def main(cfg: PlayScriptConfig):
     #     current_time = time.time()
 
     log.info("8. Exit Cleanly")
-    env.exit()
 
 if __name__ == '__main__':
     log = logging.getLogger(__name__)
