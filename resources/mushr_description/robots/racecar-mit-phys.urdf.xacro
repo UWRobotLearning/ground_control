@@ -5,12 +5,7 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="racecar">
 
 
-  <xacro:macro name="inertial_block" params="mass">
-    <inertial>
-      <mass value="${mass}"/>
-    </inertial>
-  </xacro:macro>
-
+  <!-- GEOMETRY PARAMS -->
   <xacro:property name="wheelbase" value="0.325" />
   <xacro:property name="width" value="0.2" />
   <xacro:property name="height" value="0.1" />
@@ -59,6 +54,42 @@
     <color rgba="0.3 0.57 1. 1."/>
   </material>
 
+  <!-- MACROS -->
+  <xacro:macro name="wheel_block" params="name">
+    <link name="${name}">
+      <xacro:visual_collision_block>
+        <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
+        <container>
+          <material name="black"/>
+          <origin rpy="${pi/2} 0 0"/>
+        </container>
+      </xacro:visual_collision_block>
+      <xacro:inertial_block mass="${wheel_mass}"/>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="inertial_block" params="mass">
+    <inertial>
+      <mass value="${mass}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="visual_collision_block" params="*geometry **kwargs">
+    <visual>
+      <geometry>
+        <xacro:insert_block name="geometry"/>
+      </geometry>
+      <xacro:insert_block name="kwargs"/>
+    </visual>
+    <collision>
+      <geometry>
+        <xacro:insert_block name="geometry"/>
+      </geometry>
+      <xacro:insert_block name="kwargs"/>
+    </collision>
+  </xacro:macro>
+
+  <!-- MAIN FILE -->
 	<link name="base">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -84,6 +115,11 @@
       </geometry>
       <material name="blue"/>
     </visual>
+    <collision>
+      <geometry>
+        <box size="${wheelbase} ${width} ${height}"/>
+      </geometry>
+    </collision>
     <xacro:inertial_block mass="${chassis_mass}"/>
   </link>
 
@@ -116,16 +152,7 @@
     <xacro:insert_block name="wheel_joint_props"/>
   </joint>
 
-  <link name="back_left_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
-      </geometry>
-      <material name="black"/>
-      <origin rpy="${pi/2} 0 0"/>
-    </visual>
-    <xacro:inertial_block mass="${wheel_mass}"/>
-  </link>
+  <xacro:wheel_block name="back_left_wheel"/>
 
   <joint name="chassis_to_back_right_wheel" type="continuous">
     <parent link="chassis"/>
@@ -134,16 +161,7 @@
     <xacro:insert_block name="wheel_joint_props"/>
   </joint>
 
-  <link name="back_right_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
-      </geometry>
-      <material name="black"/>
-      <origin rpy="${pi/2} 0 0"/>
-    </visual>
-    <xacro:inertial_block mass="${wheel_mass}"/>
-  </link>
+  <xacro:wheel_block name="back_right_wheel"/>
 
   <joint name="chassis_to_front_left_hinge" type="revolute">
     <parent link="chassis"/>
@@ -163,16 +181,7 @@
     <xacro:insert_block name="wheel_joint_props"/>
   </joint>
 
-  <link name="front_left_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
-      </geometry>
-      <material name="black"/>
-      <origin rpy="${pi/2} 0 0"/>
-    </visual>
-    <xacro:inertial_block mass="${wheel_mass}"/>
-  </link>
+  <xacro:wheel_block name="front_left_wheel"/>
 
   <joint name="chassis_to_front_right_hinge" type="revolute">
     <parent link="chassis"/>
@@ -191,15 +200,6 @@
     <xacro:insert_block name="wheel_joint_props"/>
   </joint>
 
-  <link name="front_right_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
-      </geometry>
-      <material name="black"/>
-      <origin rpy="${pi/2} 0 0"/>
-    </visual>
-    <!-- <xacro:inertial_block mass="${wheel_mass}"/> -->
-  </link>
+  <xacro:wheel_block name="front_right_wheel"/>
 
 </robot>

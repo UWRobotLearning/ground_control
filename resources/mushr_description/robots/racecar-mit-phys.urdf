@@ -12,6 +12,7 @@
   <material name="blue">
     <color rgba="0.3 0.57 1. 1."/>
   </material>
+  <!-- MAIN FILE -->
   <link name="base">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -36,6 +37,11 @@
       </geometry>
       <material name="blue"/>
     </visual>
+    <collision>
+      <geometry>
+        <box size="0.325 0.2 0.1"/>
+      </geometry>
+    </collision>
     <inertial>
       <mass value="1"/>
     </inertial>
@@ -75,6 +81,13 @@
       <material name="black"/>
       <origin rpy="1.5707963267948966 0 0"/>
     </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.045" radius="0.05"/>
+      </geometry>
+      <material name="black"/>
+      <origin rpy="1.5707963267948966 0 0"/>
+    </collision>
     <inertial>
       <mass value="1"/>
     </inertial>
@@ -93,6 +106,13 @@
       <material name="black"/>
       <origin rpy="1.5707963267948966 0 0"/>
     </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.045" radius="0.05"/>
+      </geometry>
+      <material name="black"/>
+      <origin rpy="1.5707963267948966 0 0"/>
+    </collision>
     <inertial>
       <mass value="1"/>
     </inertial>
@@ -122,6 +142,13 @@
       <material name="black"/>
       <origin rpy="1.5707963267948966 0 0"/>
     </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.045" radius="0.05"/>
+      </geometry>
+      <material name="black"/>
+      <origin rpy="1.5707963267948966 0 0"/>
+    </collision>
     <inertial>
       <mass value="1"/>
     </inertial>
@@ -151,7 +178,16 @@
       <material name="black"/>
       <origin rpy="1.5707963267948966 0 0"/>
     </visual>
-    <!-- <xacro:inertial_block mass="${wheel_mass}"/> -->
+    <collision>
+      <geometry>
+        <cylinder length="0.045" radius="0.05"/>
+      </geometry>
+      <material name="black"/>
+      <origin rpy="1.5707963267948966 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+    </inertial>
   </link>
 </robot>
 

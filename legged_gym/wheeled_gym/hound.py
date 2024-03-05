@@ -121,12 +121,12 @@ class Hound(BaseEnv):
         super().__init__(env, observation, sim)
         self.init_done = False
 
-        self.chain_ee = []
-        for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel",
-                        "laser_model"]:
-            self.chain_ee.append(
-                pk.build_serial_chain_from_urdf(
-                    open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
+        # self.chain_ee = []
+        # for ee_name in ["front_right_wheel", "front_left_wheel", "back_right_wheel", "back_left_wheel",
+        #                 "laser_model"]:
+        #     self.chain_ee.append(
+        #         pk.build_serial_chain_from_urdf(
+        #             open(self.asset_cfg.file).read(), ee_name).to(device=self.device))
 
         self._get_commands_from_joystick = self.observation_cfg.get_commands_from_joystick
         if self._get_commands_from_joystick:
@@ -1036,8 +1036,8 @@ class Hound(BaseEnv):
             pos = self.env_origins[i].clone()
             pos[:2] += torch_utils.torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
-            # rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
-            # self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
+            rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
+            self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             hound_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, "hound", i, int(not self.asset_cfg.self_collisions), 0)
             dof_props = self._process_dof_props(dof_props_asset, i)
             self.gym.set_actor_dof_properties(env_handle, hound_handle, dof_props)

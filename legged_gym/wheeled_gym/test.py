@@ -37,7 +37,7 @@ class PlayScriptConfig:
     use_joystick: bool = True
     episode_length_s: float = 200.
     checkpoint: int = -1
-    headless: bool = False 
+    headless: bool = False
     device: str = "cpu"
     init_joint_angles: Dict[str, float] = field(default_factory=lambda: {
         'chassis_to_back_left_wheel': 0.0,
@@ -47,13 +47,15 @@ class PlayScriptConfig:
         'chassis_to_front_right_hinge': 0.0,
         'front_right_hinge_to_wheel': 0.0,
     })
+    replace_cylinder_with_capsule: bool = True
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
     task: TaskConfig = empty_cfg(TaskConfig)(
         _target_ = "${target}",
         asset = empty_cfg(AssetConfig)(
-            file = "${asset_file}"
+            file = "${asset_file}",
+            replace_cylinder_with_capsule = "${replace_cylinder_with_capsule}"
         ),
         env = empty_cfg(EnvConfig)(
             num_envs = "${num_envs}"
