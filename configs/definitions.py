@@ -233,8 +233,8 @@ class NoiseConfig:
 @dataclass
 class ViewerConfig:
     ref_env: int = 0
-    pos: Tuple[float, float, float] = (10., 0., 6.) # [m]
-    lookat: Tuple[float, float, float] = (11., 5., 3.) # [m]
+    pos: Tuple[float, float, float] = (8., 6., 6.) # [m]
+    lookat: Tuple[float, float, float] = (7., 5, 5.) # [m]
     debug_viz: bool = False
 
 # resolving functions
@@ -245,7 +245,7 @@ OmegaConf.register_new_resolver("evaluate_use_gpu", lambda device: device.starts
 class SimConfig:
     device: str = "${oc.select: sim_device,cuda:0}"
     headless: bool = "${oc.select: headless,False}"
-    dt: float = 0.005
+    dt: float = 0.02
     substeps: int = 1
     gravity: Tuple[float, float, float] = (0., 0., -9.81) # [m/s^2]
     up_axis: int = 1 # 0 is y, 1 is z

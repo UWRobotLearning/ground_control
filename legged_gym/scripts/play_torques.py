@@ -14,7 +14,7 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
-from configs.definitions import TaskConfig, TrainConfig, ControlConfig, AssetConfig
+from configs.definitions import TaskConfig, TrainConfig, ControlConfig, AssetConfig, InitStateConfig
 from configs.overrides.terrain import FlatTerrainConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
@@ -50,12 +50,33 @@ class PlayTorquesScriptConfig:
 
     task: TaskConfig = LocomotionTaskConfig(
         control = ControlConfig(
-            control_type = "P",
+            control_type = "T",
         ),
         terrain = FlatTerrainConfig(),
         asset = AssetConfig(
             terminate_after_contacts_on = ()
+        ),
+        init_state = InitStateConfig(
+
+            default_joint_angles = {
+                                    "1_FR_hip_joint": 1.,
+                                    "1_FR_thigh_joint": 0.9,
+                                    "1_FR_calf_joint": -1.9,
+
+                                    "2_FL_hip_joint": 1.,
+                                    "2_FL_thigh_joint": 0.9,
+                                    "2_FL_calf_joint": -1.9,
+
+                                    "3_RR_hip_joint": 1.,
+                                    "3_RR_thigh_joint": 0.9,
+                                    "3_RR_calf_joint": -1.9,
+
+                                    "4_RL_hip_joint": 0.,
+                                    "4_RL_thigh_joint": 0.9,
+                                    "4_RL_calf_joint": -1.9
+                                }
         )
+
     )
     train: TrainConfig = TrainConfig()
 
@@ -86,11 +107,11 @@ def main(cfg: PlayTorquesScriptConfig) -> None:
     
     num_steps = int(cfg.episode_length_s / env.dt)
     
-    JointTensor = ReadCsv("normaltrot.csv", 'P')
+    JointTensor = ReadCsv("slow_fast_transitions.csv", 'T')
     csv_steps = len(JointTensor)
-    
+    env.dt = 0.02
     for i in range(csv_steps):
-        actions = JointTensor[i].reshape((1,12))
+        actions = JointTensor[i].reshape((1,12)) 
         obs, _, _, _, infos, *_ = env.step(actions.detach())
         
         duration = time.time() - current_time

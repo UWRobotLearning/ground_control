@@ -44,14 +44,14 @@ def main(filename:str, type:str):
         Joints      = ["FR0 tauEst", "FR1 tauEst", "FR2 tauEst", "FL0 tauEst", "FL1 tauEst", "FL2 tauEst", 
                       "RR0 tauEst", "RR1 tauEst", "RR2 tauEst", "RL0 tauEst", "RL1 tauEst", "RL2 tauEst"]
     configs = {"Sampling_frequency":1000,
-            "Low_frequency_cutoff":10,
-            "High_frequency_cutoff":20,
+            "Low_frequency_cutoff":50,
+            "High_frequency_cutoff":80,
             "order":2
             }
     
     filter = butterworth.Filter(**configs)
 
-    JointTensor = torch.stack([torch.tensor( 10*((filter.butterlow(df[Joint].values)) + 0.01), dtype = torch.float32) for Joint in Joints], dim = 1)
+    JointTensor = torch.stack([torch.tensor( filter.butterlow(df[Joint].values)+0.2, dtype = torch.float32) for Joint in Joints], dim = 1)
     
     return JointTensor
 
