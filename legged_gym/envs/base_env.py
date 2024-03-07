@@ -43,7 +43,7 @@ class BaseEnv:
         self.num_envs = self.env_cfg.num_envs
         self.num_obs = sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.sensors])
         self.num_critic_obs = self.num_obs + sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.critic_privileged_sensors])
-        self.num_actions = 12
+        self.num_actions = self.env_cfg.num_actions
         self.history_steps = self.observation_cfg.history_steps
 
         # optimization flags for pytorch JIT

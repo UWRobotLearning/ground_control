@@ -179,10 +179,11 @@ class Hound(BaseEnv):
 
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.normalization_cfg.clip_observations
-        self.obs_buf.clip_(-clip_obs, clip_obs)
-        self.critic_obs_buf.clip_(min=-clip_obs, max=clip_obs)
-        self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
-        self.obs_buf_history.insert(self.obs_buf)
+        # TODO
+        # self.obs_buf.clip_(-clip_obs, clip_obs)
+        # self.critic_obs_buf.clip_(min=-clip_obs, max=clip_obs)
+        # self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
+        # self.obs_buf_history.insert(self.obs_buf)
         policy_obs = self.get_observations()
         critic_obs = self.get_critic_observations()
 
@@ -215,7 +216,7 @@ class Hound(BaseEnv):
         self.compute_reward()
         self.compute_diagnostics()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
-        self.reset_idx(env_ids)
+        # self.reset_idx(env_ids) # TODO
         self.compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
 
         self.last_actions[:] = self.actions[:]

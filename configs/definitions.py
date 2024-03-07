@@ -32,6 +32,7 @@ class EnvConfig:
     env_spacing: float = 3. # not used with heightfields/trimeshes
     send_timeouts: bool = True # send out time information to the algorithm
     episode_length_s: float = 20. # episode length in seconds
+    num_actions: int = 12 # dimension of action space for one robot
 
 @dataclass
 class ObservationConfig:

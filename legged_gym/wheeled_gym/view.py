@@ -3,6 +3,9 @@ import logging
 import os.path as osp
 import time
 import os
+import torch
+import math
+import numpy as np
 
 from dataclasses import dataclass, field
 import hydra
@@ -23,8 +26,11 @@ from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_l
 from legged_gym.wheeled_gym.hound import Hound
 
 from isaacgym import gymapi, gymutil
+from isaacgym import gymtorch
 gym = gymapi.acquire_gym()
 
+def clamp(x, min_value, max_value):
+    return max(min(x, max_value), min_value)
 @dataclass
 class PlayScriptConfig:
     target: str = "legged_gym.wheeled_gym.hound.Hound"
@@ -122,32 +128,98 @@ def main(cfg: PlayScriptConfig):
 
     log.info(f"5. Preparing environment and runner.")
     task_cfg = cfg.task
+
     physics_engine = gymapi.SIM_PHYSX
     sim_params = gymapi.SimParams()
+    sim_params.up_axis = gymapi.UpAxis.UP_AXIS_Z
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.81)
+    sim_params.dt = 1.0 / 60.0
     sim = gym.create_sim(0, 0, physics_engine, sim_params)
+
     asset_root = os.path.dirname(cfg.task.asset.file)
     asset_file = os.path.basename(cfg.task.asset.file)
     asset_options = gymapi.AssetOptions()
+
     robot_asset = gym.load_asset(sim, asset_root, asset_file, asset_options)
+    asset = robot_asset
+
+    # get array of DOF names
+    dof_names = gym.get_asset_dof_names(asset)
+
+    # get array of DOF properties
+    dof_props = gym.get_asset_dof_properties(asset)
+
+    # create an array of DOF states that will be used to update the actors
+    num_dofs = gym.get_asset_dof_count(asset)
+    print(num_dofs)
+    dof_states = np.zeros(num_dofs, dtype=gymapi.DofState.dtype)
+
+    # get list of DOF types
+    dof_types = [gym.get_asset_dof_type(asset, i) for i in range(num_dofs)]
+
+    # get the position slice of the DOF state array
+    dof_positions = dof_states['pos']
+
+    # get the limit-related slices of the DOF properties array
+    stiffnesses = dof_props['stiffness']
+    dampings = dof_props['damping']
+    armatures = dof_props['armature']
+    has_limits = dof_props['hasLimits']
+    lower_limits = dof_props['lower']
+    upper_limits = dof_props['upper']
+
+    # Print DOF properties
+    for i in range(num_dofs):
+        print("DOF %d" % i)
+        print("  Name:     '%s'" % dof_names[i])
+        print("  Type:     %s" % gym.get_dof_type_string(dof_types[i]))
+        print("  Stiffness:  %r" % stiffnesses[i])
+        print("  Damping:  %r" % dampings[i])
+        print("  Armature:  %r" % armatures[i])
+        print("  Limited?  %r" % has_limits[i])
+        if has_limits[i]:
+            print("    Lower   %f" % lower_limits[i])
+            print("    Upper   %f" % upper_limits[i])
+
 
     spacing = 5
     env_lower = gymapi.Vec3(-spacing, -spacing, 0.)
     env_upper = gymapi.Vec3(spacing, spacing, spacing)
     start_pose = gymapi.Transform()
     env_handle = gym.create_env(sim, env_lower, env_upper, 1)
-    hound_handle = gym.create_actor(env_handle, robot_asset, start_pose, "hound", 0, 0, 0)
+    hound_handle = gym.create_actor(env_handle, robot_asset, start_pose, "hound", 0, 1)
     viewer = gym.create_viewer(sim, gymapi.CameraProperties())
 
-    cam_pos = gymapi.Vec3(1, 1, 1)
-    cam_target = gymapi.Vec3(-1, -1, -1)
-    gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
-    # env: Hound = hydra.utils.instantiate(task_cfg)
-    # env.reset()
-    # obs = env.get_observations()
+    # cam_pos = gymapi.Vec3(1, 1, 1)
+    # cam_target = gymapi.Vec3(-1, -1, -1)
+    # gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
 
+    plane_params = gymapi.PlaneParams()
+    plane_params.normal = gymapi.Vec3(0.0, 0.0, 1.0)
+    plane_params.static_friction = 1.
+    plane_params.dynamic_friction = 1.
+    gym.add_ground(sim, plane_params)
+
+    current_time = time.time()
+    dt = 1./60.
     while not gym.query_viewer_has_closed(viewer):
+        gym.fetch_results(sim, True)
         gym.step_graphics(sim)
         gym.draw_viewer(viewer, sim, True)
+
+        rand_actions = torch.rand(6) * .5
+        # rand_actions = torch.zeros(6)
+        rand_actions[..., [2,4]] = 0.
+        print(rand_actions)
+        rand_actions = gymtorch.unwrap_tensor(rand_actions)
+        gym.set_dof_actuation_force_tensor(sim, rand_actions)
+        gym.refresh_dof_state_tensor(sim)
+        gym.simulate(sim)
+
+        duration = time.time() - current_time
+        if duration < dt:
+            time.sleep(dt - duration)
+        current_time = time.time()
     # runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
     # experiment_path = get_latest_experiment_path(cfg.checkpoint_root)

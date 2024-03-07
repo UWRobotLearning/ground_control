@@ -18,20 +18,23 @@
 
   <!-- ISAAC GYM RIGID BODY PARAMS -->
   <!-- Wheel Properties -->
-  <xacro:property name="wheel_mass" value="1" />
+  <xacro:property name="wheel_mass" value=".5" />
   <xacro:property name="wheel_joint_props">
     <axis xyz="0 1 0"/>
+  </xacro:property>
+  <xacro:property name="wheel_inertia">
+    <inertia ixx="0.0013" ixy="0" ixz="0" iyy="0.0024" iyz="0" izz="0.0013"/>
   </xacro:property>
 
   <!-- Hinge Properties -->
   <xacro:property name="hinge_mass" value="0.01" />
   <xacro:property name="hinge_joint_props">
     <axis xyz="0 0 1"/>
-    <!-- <limit lower="${-1 * pi / 6}" upper="${pi / 6}" effort=1000/> -->
+    <limit lower="${-1 * pi / 6}" upper="${pi / 6}" effort="1000" velocity="1.0"/>
   </xacro:property>
 
   <!-- Chassis Properties -->
-  <xacro:property name="chassis_mass" value="1" />
+  <xacro:property name="chassis_mass" value="10" />
   <xacro:property name="chassis_inertia">
     <inertia
       ixx="1"
@@ -44,7 +47,7 @@
   </xacro:property>
 
   <!-- Sensor Properties -->
-  <xacro:property name="laser_mass" value="1" />
+  <xacro:property name="laser_mass" value=".01" />
 
   <material name="black">
     <color rgba="0.2 0.2 0.2 1."/>
@@ -64,13 +67,18 @@
           <origin rpy="${pi/2} 0 0"/>
         </container>
       </xacro:visual_collision_block>
-      <xacro:inertial_block mass="${wheel_mass}"/>
+      <xacro:inertial_block mass="${wheel_mass}">
+        <container>
+          <xacro:insert_block name="wheel_inertia"/>
+        </container>
+      </xacro:inertial_block>
     </link>
   </xacro:macro>
 
-  <xacro:macro name="inertial_block" params="mass">
+  <xacro:macro name="inertial_block" params="mass **kwargs">
     <inertial>
       <mass value="${mass}"/>
+      <xacro:insert_block name="kwargs"/>
     </inertial>
   </xacro:macro>
 
@@ -90,23 +98,6 @@
   </xacro:macro>
 
   <!-- MAIN FILE -->
-	<link name="base">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <box size="0.001 0.001 0.001"/>
-      </geometry>
-    </visual>
-		<!-- <inertial>
-			<origin
-				xyz="0 0 0"
-				rpy="0 0 0" />
-			<mass
-				value="0.1" />
-      <xacro:insert_block name="chassis_inertia"/>
-		</inertial> -->
-	</link>
-
   <link name="chassis">
     <visual>
       <origin xyz="${wheelbase/2} 0 ${ground_offset+height/2}"/>
@@ -115,19 +106,18 @@
       </geometry>
       <material name="blue"/>
     </visual>
-    <collision>
+    <!-- <collision>
       <geometry>
         <box size="${wheelbase} ${width} ${height}"/>
       </geometry>
-    </collision>
-    <xacro:inertial_block mass="${chassis_mass}"/>
+    </collision> -->
+    <xacro:inertial_block mass="${chassis_mass}">
+      <container>
+        <xacro:insert_block name="chassis_inertia"/>
+        <origin xyz="${wheelbase/2} 0 ${ground_offset+height/2}"/>
+      </container>
+    </xacro:inertial_block>
   </link>
-
-  <joint name="base_to_chassis" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="base"/>
-    <child link="chassis"/>
-  </joint>
 
   <joint name="chassis_to_laser_model" type="fixed">
     <parent link="chassis"/>
@@ -142,7 +132,7 @@
       </geometry>
       <material name="black"/>
     </visual>
-    <xacro:inertial_block mass="${laser_mass}"/>
+    <xacro:inertial_block mass="${laser_mass}"><container/></xacro:inertial_block>
   </link>
 
   <joint name="chassis_to_back_left_wheel" type="continuous">
@@ -171,11 +161,11 @@
   </joint>
 
   <link name="front_left_hinge">
-    <xacro:inertial_block mass="${hinge_mass}"/>
+    <xacro:inertial_block mass="${hinge_mass}"><container/></xacro:inertial_block>
   </link>
 
 
-  <joint name="front_left_hinge_to_wheel" type="revolute">
+  <joint name="front_left_hinge_to_wheel" type="continuous">
     <parent link="front_left_hinge"/>
     <child link="front_left_wheel"/>
     <xacro:insert_block name="wheel_joint_props"/>
@@ -191,10 +181,10 @@
   </joint>
 
   <link name="front_right_hinge">
-    <xacro:inertial_block mass="${hinge_mass}"/>
+     <xacro:inertial_block mass="${hinge_mass}"><container/></xacro:inertial_block>
   </link>
 
-  <joint name="front_right_hinge_to_wheel" type="revolute">
+  <joint name="front_right_hinge_to_wheel" type="continuous">
     <parent link="front_right_hinge"/>
     <child link="front_right_wheel"/>
     <xacro:insert_block name="wheel_joint_props"/>

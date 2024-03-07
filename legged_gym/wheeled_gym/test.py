@@ -9,10 +9,11 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
 from typing import Dict
 from pydantic import TypeAdapter
+import torch
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig,
+                                 SimConfig, RunnerConfig, TerrainConfig, ControlConfig,
                                  AssetConfig, InitStateConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
@@ -24,6 +25,12 @@ from legged_gym.wheeled_gym.hound import Hound
 from isaacgym import gymapi, gymutil
 gym = gymapi.acquire_gym()
 
+joint_names = ['chassis_to_back_left_wheel',
+               'chassis_to_back_right_wheel',
+               'front_left_hinge_to_wheel',
+               'front_right_hinge_to_wheel',
+               'chassis_to_front_left_hinge',
+               'chassis_to_front_right_hinge']
 @dataclass
 class PlayScriptConfig:
     target: str = "legged_gym.wheeled_gym.hound.Hound"
@@ -39,15 +46,12 @@ class PlayScriptConfig:
     checkpoint: int = -1
     headless: bool = False
     device: str = "cpu"
-    init_joint_angles: Dict[str, float] = field(default_factory=lambda: {
-        'chassis_to_back_left_wheel': 0.0,
-        'chassis_to_back_right_wheel': 0.0,
-        'chassis_to_front_left_hinge': 0.0,
-        'front_left_hinge_to_wheel': 0.0,
-        'chassis_to_front_right_hinge': 0.0,
-        'front_right_hinge_to_wheel': 0.0,
-    })
-    replace_cylinder_with_capsule: bool = True
+    init_joint_angles: Dict[str, float] = field(default_factory=lambda: {k:0. for k in joint_names})
+    replace_cylinder_with_capsule: bool = False
+    control_type: str = "T"
+    num_actions: int = 6
+    p_gains: Dict[str, float] = field(default_factory=lambda: {k:0.1 for k in joint_names})
+    d_gains: Dict[str, float] = field(default_factory=lambda: {k:0.1 for k in joint_names})
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -57,8 +61,14 @@ class PlayScriptConfig:
             file = "${asset_file}",
             replace_cylinder_with_capsule = "${replace_cylinder_with_capsule}"
         ),
+        control = empty_cfg(ControlConfig)(
+            control_type = "${control_type}",
+            # stiffness = "${p_gains}",
+            # damping = "${d_gains}"
+        ),
         env = empty_cfg(EnvConfig)(
-            num_envs = "${num_envs}"
+            num_envs = "${num_envs}",
+            num_actions = "${num_actions}",
         ),
         observation = empty_cfg(ObservationConfig)(
             get_commands_from_joystick = "${use_joystick}"
@@ -103,7 +113,7 @@ def main(cfg: PlayScriptConfig):
     default_cfg = {"task": TaskConfig(), "train": TrainConfig(), "init_state": InitStateConfig()}  # default behaviour as defined in "configs/definitions.py"
     merged_cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
-        loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
+        # loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
         cfg           # highest priority, loads from the top-level config dataclass above
     )
     # Resolves the config (replaces all "interpolations" - references in the config that need to be resolved to constant values)
@@ -124,14 +134,9 @@ def main(cfg: PlayScriptConfig):
     log.info(f"5. Preparing environment and runner.")
     task_cfg = cfg.task
     env: Hound = hydra.utils.instantiate(task_cfg)
-    sim = env.sim
-    viewer = env.viewer
-    # env.reset()
+    env.reset()
     obs = env.get_observations()
 
-    while not gym.query_viewer_has_closed(viewer):
-        gym.step_graphics(sim)
-        gym.draw_viewer(viewer, sim, True)
     # runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
     # experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
@@ -145,16 +150,20 @@ def main(cfg: PlayScriptConfig):
     #     log.info(f"Exported policy as jit script to: {cfg.checkpoint_root}")
 
     # log.info(f"7. Running interactive play script.")
-    # current_time = time.time()
-    # num_steps = int(cfg.episode_length_s / env.dt)
-    # for i in range(num_steps):
-    #     actions = policy(obs.detach())
-    #     obs, _, _, _, infos, *_ = env.step(actions.detach())
+    current_time = time.time()
+    num_steps = int(cfg.episode_length_s / env.dt)
+    for i in range(num_steps):
+        # actions = policy(obs.detach())
 
-    #     duration = time.time() - current_time
-    #     if duration < env.dt:
-    #         time.sleep(env.dt - duration)
-    #     current_time = time.time()
+        rand_actions = torch.rand(env.actions.shape) * .5
+        rand_actions[..., [2,4]] = (torch.rand(env.actions[..., 0].shape)*2 - 1).unsqueeze(-1)
+        # rand_actions = torch.zeros(env.actions.shape)
+        obs, _, _, _, infos, *_ = env.step(rand_actions)
+
+        duration = time.time() - current_time
+        if duration < env.dt:
+            time.sleep(env.dt - duration)
+        current_time = time.time()
 
     log.info("8. Exit Cleanly")
     env.exit()
