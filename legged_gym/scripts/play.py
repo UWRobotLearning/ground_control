@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
-from pydantic import TypeAdapter
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
@@ -30,6 +29,7 @@ class PlayScriptConfig:
     checkpoint: int = -1
     headless: bool = False 
     device: str = "cpu"
+    typechecking: bool = False
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -75,19 +75,19 @@ def main(cfg: PlayScriptConfig):
     log.info("2. Merging loaded config, defaults and current top-level config.")
     del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
-    merged_cfg = OmegaConf.merge(
+    cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
         loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
         cfg           # highest priority, loads from the top-level config dataclass above
     )
-    # Resolves the config (replaces all "interpolations" - references in the config that need to be resolved to constant values)
-    # and turns it to a dictionary (instead of DictConfig in OmegaConf). Throws an error if there are still missing values.
-    merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
-    # Creates a new PlayScriptConfig object (with type-checking and optional validation) using Pydantic.
-    # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
-    cfg = TypeAdapter(PlayScriptConfig).validate_python(merged_cfg_dict)
-    # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
-    # cfg = PlayScriptConfig(**merged_cfg_dict)
+
+    if cfg.typechecking:
+        from pydantic import TypeAdapter
+        # Creates a new PlayScriptConfig object (with type-checking and optional validation) using Pydantic.
+        # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
+        cfg = TypeAdapter(PlayScriptConfig).validate_python(OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True))
+
+
     log.info(f"3. Printing merged cfg.")
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
