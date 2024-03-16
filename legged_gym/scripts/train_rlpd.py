@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 # from pydantic import TypeAdapter  ## Commented out by Mateo because this conflicts with tf_probability
 
 from configs.definitions import TaskConfig, TrainConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, MoveFwdTaskConfig
+from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, WITPUnclippedLocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1
@@ -48,33 +48,43 @@ from witp.rl.evaluation import evaluate
 from witp.rl.wrappers import wrap_gym
 import ml_collections
 from typing import Optional
-from flax.core import frozen_dict
 ## DELETE AFTER DEBUGGING
 # from jax import config
 # config.update("jax_disable_jit", True)
 #######
 #####
 
+## RLPD imports:
+from rlpd.agents import SACLearner
+from rlpd.data import ReplayBuffer
+from flax.core import frozen_dict
+
 @dataclass
 class Flags:
     # env_name: str = 'A1Run-v0'
     # save_dir: str = './tmp/'
+    project_name: str = "rlpd_locomotion"
+    offline_ratio: float = 0.0
     seed: int = 42
     eval_episodes: int = 1
     log_interval: int = 1000
     eval_interval: int = 1000
     video_interval: int = 20
     batch_size: int = 256
-    max_steps: int = int(1e5)
-    start_training: int = int(1e3)
+    max_steps: int = int(1e6)
+    start_training: int = 5000 #int(1e4)
+    pretrain_steps: int = 0
     tqdm: bool = True
     wandb: bool = True
     save_video: bool = False
+    checkpoint_model: bool = False
+    checkpoint_buffer: bool = False
     action_filter_high_cut: Optional[float] = None
     action_history: int = 1
     control_frequency: int = 20
     utd_ratio: int = 20
     real_robot: bool = False
+    offline_data_dir: str = "/home/mateo/projects/experiment_logs/collect/2024-02-28_11-21-39/dataset_2023-12-06_08-46-22_model_5000_1M_relabeled_witp.pkl"
 
     def as_dict(self):
         return asdict(self)
@@ -108,7 +118,7 @@ class TrainScriptConfig:
     logging_root: str = from_repo_root("./witp_experiment_logs")
     episode_buffer_len: int = 100
     name: str = ""
-    task: TaskConfig = MoveFwdTaskConfig()
+    task: TaskConfig = WITPUnclippedLocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
@@ -116,6 +126,27 @@ class TrainScriptConfig:
 cs = ConfigStore.instance()
 cs.store(name="config", node=TrainScriptConfig)
 
+def combine(one_dict, other_dict):
+    combined = {}
+
+    for k, v in one_dict.items():
+        if k == "observation_labels":
+            combined[k] = v
+            continue
+        if isinstance(v, dict):
+            combined[k] = combine(v, other_dict[k])
+        else:
+            tmp = np.empty(
+                (v.shape[0] + other_dict[k].shape[0], *v.shape[1:]), dtype=v.dtype
+            )
+            tmp[0:v.shape[0]] = v
+            tmp[v.shape[0]:] = other_dict[k].shape[0]  ## Might need to shuffle, but if I do, need to make sure I use a random seed.
+            # tmp[0::2] = v
+            # tmp[1::2] = other_dict[k]
+            # tmp = np.concatenate([v, other_dict[k]], axis=0)
+            combined[k] = tmp
+
+    return combined
 
 def obs_to_nn_input(observation):
     '''
@@ -197,9 +228,9 @@ def main(cfg: TrainScriptConfig) -> None:
 
     ## Initialize WandB
     if cfg.name == "":
-        wandb.init(project='a1')
+        wandb.init(project=FLAGS.project_name)
     else:
-        wandb.init(project='a1', name=cfg.name)
+        wandb.init(project=FLAGS.project_name, name=cfg.name)
     wandb_cfg_dict = {**FLAGS.as_dict(), **kwargs, **dict(cfg)}
     wandb.config.update(wandb_cfg_dict)
 
@@ -213,27 +244,21 @@ def main(cfg: TrainScriptConfig) -> None:
     num_actions = env.num_actions
     action_limit = cfg.task.normalization.clip_actions
     action_space = gym.spaces.Box(low=-action_limit, high=action_limit, shape=(num_actions,))
-    # action_space = gym.spaces.Box(
-    #     low=np.array([-0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697, -0.803, -1.047, -2.697]),
-    #     high=np.array([0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916]),
-    #     shape=(num_actions,)
-    # )
 
     agent = SACLearner.create(FLAGS.seed, observation_space,
                               action_space, **kwargs)
     
-    # import pdb;pdb.set_trace()
-
     ###################################################### 
+    # Set up replay buffer and offline dataset
+    ###################################################### 
+
     # Set up replay buffer
-    ###################################################### 
-
     start_i = 0
     ep_counter = 0
     observation_labels = {
-        'qpos': (0, 12),
-        'qvel': (12, 24),
-        'prev_action': (24, 36),
+        'motor_pos': (0, 12), 
+        'motor_vel': (12, 24),
+        'last_action': (24, 36),
         'base_quat': (36, 40),
         'base_ang_vel': (40, 43),
         'base_lin_vel': (43, 46)
@@ -243,6 +268,10 @@ def main(cfg: TrainScriptConfig) -> None:
                                     observation_labels=observation_labels)
     replay_buffer.seed(FLAGS.seed)
 
+    # Set up offline dataset
+    ds_dir = FLAGS.offline_data_dir
+    with open(ds_dir, 'rb') as f:
+        ds = pickle.load(f)
     # Set up reward and episode length buffers for logging purposes
     rewards_buffer = deque(maxlen=cfg.episode_buffer_len)
     lengths_buffer = deque(maxlen=cfg.episode_buffer_len)
@@ -264,6 +293,22 @@ def main(cfg: TrainScriptConfig) -> None:
     ###################################################### 
     # Reset environment
     ###################################################### 
+        
+    for i in tqdm.tqdm(
+        range(0, FLAGS.pretrain_steps), smoothing=0.1, disable=not FLAGS.tqdm
+    ):
+        offline_batch = ds.sample_select(
+                FLAGS.batch_size * FLAGS.utd_ratio, 
+                include_labels=list(observation_labels.keys())
+            )
+        batch = {}
+
+        agent, update_info = agent.update(offline_batch, FLAGS.utd_ratio)
+
+        if i % FLAGS.log_interval == 0:
+            for k, v in update_info.items():
+                wandb.log({f"offline-training/{k}": v}, step=i)
+
     observation, _ = env.reset()
     done = False
 
@@ -271,7 +316,6 @@ def main(cfg: TrainScriptConfig) -> None:
     learn_time = 0
 
     log.info("3. Now Training")
-    # runner.learn()
 
     for i in tqdm.tqdm(range(start_i, FLAGS.max_steps),
                        smoothing=0.1,
@@ -330,11 +374,20 @@ def main(cfg: TrainScriptConfig) -> None:
         start = stop
         ## This clause will largely be the same!
         if i >= FLAGS.start_training:
-            batch = replay_buffer.sample(FLAGS.batch_size * FLAGS.utd_ratio)
+            online_batch = replay_buffer.sample(
+                int(FLAGS.batch_size * FLAGS.utd_ratio * (1 - FLAGS.offline_ratio))
+            )
+            offline_batch = ds.sample_select(
+                int(FLAGS.batch_size * FLAGS.utd_ratio * FLAGS.offline_ratio), 
+                include_labels=list(observation_labels.keys())
+            )
+
+            batch = combine(offline_batch, online_batch)
             if "observation_labels" in batch:
                 batch = dict(batch)
                 batch.pop("observation_labels")
                 batch = frozen_dict.freeze(batch)
+
             agent, update_info = agent.update(batch, FLAGS.utd_ratio)
 
             stop = time.time()

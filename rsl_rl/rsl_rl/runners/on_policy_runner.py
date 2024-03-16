@@ -91,7 +91,7 @@ class OnPolicyRunner:
         # init storage and model
         self.alg.init_storage(self.env.num_envs, self.num_steps_per_env, [num_actor_obs], [num_critic_obs], [self.env.num_actions])
 
-        _, _ = self.env.reset()
+        _, *_ = self.env.reset()
 
     def make_alg(self, actor_critic: ActorCritic) -> PPO:
             return hydra.utils.instantiate(
@@ -303,8 +303,8 @@ class OnPolicyRunner:
                     wandb.log({key: value}, step=locs['it'])
 
     def _log_wandb_videos(self, scene_images, fpv_images, iteration):
-            wandb.log({"video/scene": wandb.Video(scene_images, fps=10)}, step=iteration)
-            wandb.log({"video/fpv": wandb.Video(fpv_images, fps=10)}, step=iteration)
+            wandb.log({"video/scene": wandb.Video(scene_images, fps=30)}, step=iteration)
+            wandb.log({"video/fpv": wandb.Video(fpv_images, fps=30)}, step=iteration)
 
     def save(self, path, infos=None):
         torch.save({

@@ -21,7 +21,9 @@ from omegaconf import OmegaConf
 # from pydantic import TypeAdapter  ## Commented out by Mateo because this conflicts with tf_probability
 
 from configs.definitions import TaskConfig, TrainConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, ResidualLocomotionTaskConfig
+from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, ResidualLocomotionTaskConfig, ResidualWITPLocomotionTaskConfig
+from configs.overrides.domain_rand import NoDomainRandConfig
+from configs.overrides.noise import NoNoiseConfig
 from configs.hydra import ExperimentHydraConfig
 
 # from legged_gym.envs.a1 import A1
@@ -113,7 +115,8 @@ class TrainResidualScriptConfig:
     export_policy: bool = True
     episode_buffer_len: int = 100
     name: str = ""
-    task: TaskConfig = ResidualLocomotionTaskConfig()
+    just_pretrained: bool = False
+    task: TaskConfig = ResidualWITPLocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
@@ -149,7 +152,7 @@ def action_to_env_input(action):
     return action
 
 
-def create_gif_from_numpy_array(frames_array, filename, fps=10):
+def create_gif_from_numpy_array(frames_array, filename, fps=30):
     # OpenCV expects the dimensions to be (height, width) instead of (width, height)
     frames_array = frames_array.transpose(0, 2, 3, 1)
     frames_list = [frame for frame in frames_array]
@@ -173,7 +176,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
 
     experiment_path = cfg.checkpoint_root
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
-    resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
+    resume_path = get_load_path(experiment_path, checkpoint=cfg.checkpoint)
     runner.load(resume_path)
     log.info(f"2.5 Loading policy checkpoint from: {resume_path}.")
     policy = runner.get_inference_policy(device=env.device)
@@ -188,6 +191,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
     env.reset()
     obs = env.get_observations()
     critic_obs = env.get_critic_observations()
+    residual_obs = env.get_residual_observations()
 
     # if cfg.train.runner.resume_root != "":
     #     experiment_dir = get_latest_experiment_path(cfg.train.runner.resume_root)
@@ -229,7 +233,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
     ## Define our own observation space and action space since these are not directly available in 
     ## the ground_control A1 environment:
     ## By default, fine-tuning algorithm will only use the sensors in cfg.task.observation.sensors, NOT the cfg.task.observation.critic_privileged_sensors
-    num_obs = env.num_obs
+    num_obs = env.num_residual_obs
     obs_limit = cfg.task.normalization.clip_observations
     observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(num_obs,))
 
@@ -241,19 +245,14 @@ def main(cfg: TrainResidualScriptConfig) -> None:
     #     high=np.array([0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916,  0.803,  4.189, -0.916]),
     #     shape=(num_actions,)
     # )
-    sensors =  cfg.task.observation.sensors ## + cfg.task.observation.critic_privileged_sensors
+    sensors =  cfg.task.observation.residual_sensors
     observation_labels = {sensor_name:(0, 0) for sensor_name in sensors}
-    observation_labels['projected_gravity'] = (0, 3)
-    observation_labels['commands'] = (3, 6)
-    observation_labels['motor_pos'] = (6, 18)
-    observation_labels['motor_vel'] = (18, 30)
-    observation_labels['last_action'] = (30, 42)
-    observation_labels['yaw_rate'] = (42, 43)
-    # observation_labels['base_lin_vel'] = (43, 46)
-    # observation_labels['base_ang_vel'] = (46, 49)
-    # observation_labels['terrain_height'] = (49, 50)
-    # observation_labels['friction'] = (50, 51)
-    # observation_labels['base_mass'] = (51, 52)
+    observation_labels['motor_pos_unshifted'] = (0, 12)
+    observation_labels['motor_vel'] = (12, 24)
+    observation_labels['last_action'] = (24, 36)
+    observation_labels['base_quat'] = (36, 40)
+    observation_labels['base_ang_vel'] = (40, 43)
+    observation_labels['base_lin_vel'] = (43, 46)
     replay_buffer = ReplayBuffer(observation_space, action_space,
                                     FLAGS.max_steps, next_observation_space=observation_space,
                                     observation_labels=observation_labels)
@@ -290,7 +289,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
     ###################################################### 
     # Reset environment
     ###################################################### 
-    observation_torch, _ = env.reset()
+    observation_torch, _, residual_obs_torch = env.reset()
     done = False
 
     collection_time = 0
@@ -304,13 +303,14 @@ def main(cfg: TrainResidualScriptConfig) -> None:
                        disable=not FLAGS.tqdm):
         ## Convert observation to be of usable form:
         start = time.time()
-        observation = obs_to_nn_input(observation_torch)
+        observation = obs_to_nn_input(residual_obs_torch)
 
         if i < FLAGS.start_training:
             action = action_space.sample()
         else:
             action, agent = agent.sample_actions(observation)
-
+        if cfg.just_pretrained:
+            action = np.zeros(12)  ## Sanity check, NEEDS TO BE COMMENTED OUT FOR PROPER PERFORMANCE
         ## Note: Action clipping now happens inside the environment, can be set in config.
         ## Convert action to be of usable form
         env_action = action_to_env_input(action).to(env.device)
@@ -319,10 +319,10 @@ def main(cfg: TrainResidualScriptConfig) -> None:
         pretrained_action = env.get_pretrained_action(observation_torch)
 
         ## Environment step
-        next_observation_torch, _, reward, done, info = env.step(env_action)
+        next_observation_torch, _, reward, done, info, next_residual_obs_torch = env.step(env_action)
 
         ## Convert next_observation, reward, done, info into usable forms
-        next_observation = obs_to_nn_input(next_observation_torch)
+        next_observation = obs_to_nn_input(next_residual_obs_torch)
         reward = reward.detach().cpu().item()
         done = done.detach().cpu().item()
 
@@ -351,6 +351,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
                  next_observations=next_observation,
                  observation_labels=observation_labels))
         observation = next_observation
+        observation_torch = next_observation_torch
 
         stop = time.time()
         collection_time = stop - start
@@ -375,7 +376,7 @@ def main(cfg: TrainResidualScriptConfig) -> None:
         
 
         if done:
-            observation_torch, _ = env.reset()
+            observation_torch, _, residual_obs_torch = env.reset()
             done = False
             rewards_buffer.extend([current_reward_sum])
             lengths_buffer.extend([current_episode_length])
@@ -395,13 +396,13 @@ def main(cfg: TrainResidualScriptConfig) -> None:
                 ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
                 ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
 
-                wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=i)
-                wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=i)
+                wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=30)}, step=i)
+                wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=30)}, step=i)
 
                 ep_scene_filename = os.path.join(ep_scene_path, f'ep_{ep_counter}.gif')
                 ep_fpv_filename = os.path.join(ep_fpv_path, f'ep_{ep_counter}.gif')
-                create_gif_from_numpy_array(ep_scene_images_stacked, ep_scene_filename, fps=10)
-                create_gif_from_numpy_array(ep_fpv_images_stacked, ep_fpv_filename, fps=10)
+                create_gif_from_numpy_array(ep_scene_images_stacked, ep_scene_filename, fps=30)
+                create_gif_from_numpy_array(ep_fpv_images_stacked, ep_fpv_filename, fps=30)
 
             ep_scene_images = []
             ep_fpv_images = []
@@ -413,3 +414,10 @@ def main(cfg: TrainResidualScriptConfig) -> None:
 if __name__ == "__main__":
     log = logging.getLogger(__name__)
     main()
+
+'''
+Example command line command:
+python train_residual.py checkpoint_root='/home/mateo/projects/experiment_logs/train/2024-02-14_23-01-24' checkpoint=500  headless=True
+
+Note: Currently requires observation spaces to be the same. How can we bypass this?
+'''

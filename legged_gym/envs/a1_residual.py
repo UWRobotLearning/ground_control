@@ -21,10 +21,6 @@ from configs.definitions import (EnvConfig, ObservationConfig, TerrainConfig,
                                  SimConfig)
 log = logging.getLogger(__name__)
 
-## Added by Mateo for logging
-from witp.rl.data.replay_buffer import ReplayBuffer
-from witp.rl.data.dataset import Dataset
-
 # TODO: generate from URDF?
 # from origin of trunk
 COM_OFFSET = torch.tensor([0.012731, 0.002186, 0.000515])
@@ -74,6 +70,8 @@ EPISODE_DIAGNOSTICS = "Diagnostics"
 DIAGNOSTICS_LOG_NAMES = dict(
     action=f"{EPISODE_DIAGNOSTICS}/action/action",
     action_change=f"{EPISODE_DIAGNOSTICS}/action/action_change",
+    lin_vel_x=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_x",
+    lin_vel_y=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_y",
     lin_vel_z=f"{EPISODE_DIAGNOSTICS}/base/lin_vel_z",
     ang_vel_xy=f"{EPISODE_DIAGNOSTICS}/base/ang_vel_xy",
     nonflat_orientation=f"{EPISODE_DIAGNOSTICS}/base/nonflat_orientation",
@@ -95,7 +93,14 @@ DIAGNOSTICS_LOG_NAMES = dict(
     collision=f"{EPISODE_DIAGNOSTICS}/safety/collision",
     stumble=f"{EPISODE_DIAGNOSTICS}/safety/stumble",
     termination=f"{EPISODE_DIAGNOSTICS}/safety/termination",
-    terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level"
+    terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level",
+    command_lin_vel_x=f"{EPISODE_DIAGNOSTICS}/commands/lin_vel_x",
+    command_lin_vel_y=f"{EPISODE_DIAGNOSTICS}/commands/lin_vel_y",
+    command_ang_vel_yaw=f"{EPISODE_DIAGNOSTICS}/commands/ang_vel_yaw",
+    command_heading=f"{EPISODE_DIAGNOSTICS}/commands/heading",
+    pretrained_policy_magnitude=f"{EPISODE_DIAGNOSTICS}/policy/pretrained_magnitude",
+    finetuned_policy_magnitude=f"{EPISODE_DIAGNOSTICS}/policy/finetuned_magnitude",
+    final_policy_magnitude=f"{EPISODE_DIAGNOSTICS}/policy/final_magnitude"
 )
 
 class A1Residual(BaseTask):
@@ -148,7 +153,6 @@ class A1Residual(BaseTask):
 
     def load_pretrained_policy(self, policy: Callable[[torch.Tensor], torch.Tensor]):
         self.policy = policy
-        # self.policy.eval()
 
     def reset(self):
         """ Reset all robots. Additionally, if we use a history of observations,
@@ -159,8 +163,8 @@ class A1Residual(BaseTask):
             torch.arange(self.num_envs, device=self.device),
             self.obs_buf[torch.arange(self.num_envs, device=self.device)])
         self.pretrained_action = torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False)
-        obs, critic_obs, *_ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
-        return obs, critic_obs
+        obs, critic_obs, _, _, _, residual_obs, *_ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
+        return obs, critic_obs, residual_obs
 
     def step(self, actions):
         """ Apply actions, simulate, call self.post_physics_step()
@@ -170,7 +174,9 @@ class A1Residual(BaseTask):
         """
         ## NOTE: Using residual actions here
         # import ipdb;ipdb.set_trace()
-        actions = actions + self.pretrained_action
+        self.input_actions = actions  ## Saved here for logging
+        # actions = actions + self.pretrained_action
+        actions = self.pretrained_action
         clip_actions = self.normalization_cfg.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
         if self.control_cfg.clip_setpoint:
@@ -202,13 +208,16 @@ class A1Residual(BaseTask):
         clip_obs = self.normalization_cfg.clip_observations
         self.obs_buf.clip_(-clip_obs, clip_obs)
         self.critic_obs_buf.clip_(min=-clip_obs, max=clip_obs)
+        self.residual_obs_buf.clip_(min=-clip_obs, max=clip_obs)
         self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
         self.obs_buf_history.insert(self.obs_buf)
         policy_obs = self.get_observations()
         critic_obs = self.get_critic_observations()
+        ## TODO: Add residual to obs_buf_history, and maybe critic?
+        residual_obs = self.get_residual_observations()
 
         infos, self.extras = self.extras, dict()
-        return policy_obs, critic_obs, self.rew_buf, self.reset_buf, infos, *other_post_physics_outputs
+        return policy_obs, critic_obs, self.rew_buf, self.reset_buf, infos, residual_obs, *other_post_physics_outputs
 
     def get_observations(self):
         return self.obs_buf_history.get_obs_vec(np.arange(self.history_steps))
@@ -378,8 +387,7 @@ class A1Residual(BaseTask):
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
-        if "witp_reward_scale" in self.rewards_cfg:
-            self.rew_buf[:] *= self.rewards_cfg.witp_reward_scale  ## Not needed when not doing Walk in the Park
+        self.rew_buf[:] *= self.rewards_cfg.scale_all
         if self.rewards_cfg.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -405,6 +413,15 @@ class A1Residual(BaseTask):
             self.commands[:, 0] = lin_vel_x
             self.commands[:, 1] = lin_vel_y
             self.commands[:, 2] = ang_vel
+        elif self.commands_cfg.use_fixed_commands:
+            lin_vel_x = self.commands_cfg.fixed_commands.lin_vel_x
+            lin_vel_y = self.commands_cfg.fixed_commands.lin_vel_y
+            ang_vel_yaw = self.commands_cfg.fixed_commands.ang_vel_yaw
+            heading = self.commands_cfg.fixed_commands.heading
+            self.commands[:, 0] = lin_vel_x
+            self.commands[:, 1] = lin_vel_y
+            self.commands[:, 2] = ang_vel_yaw
+            # self.commands[:, 3] = heading  ## Not sure if this should be used/set
 
         sensors = self.observation_cfg.sensors + self.observation_cfg.critic_privileged_sensors
         self.critic_obs_buf = self._compute_observations(sensors, self.normalization_cfg.normalize)
@@ -413,6 +430,9 @@ class A1Residual(BaseTask):
             obs = self.critic_obs_buf[..., :self.num_obs]
             self.critic_obs_buf[..., :self.num_obs] += (2*torch.rand_like(obs) - 1) * self.noise_scale_vec
         self.obs_buf = self.critic_obs_buf[:, :self.num_obs].clone()
+
+        residual_sensors = self.observation_cfg.residual_sensors
+        self.residual_obs_buf = self._compute_observations(residual_sensors, self.normalization_cfg.normalize_residual)
 
     def _compute_observations(self, sensors: Tuple[str], normalize=True):
         obs_list = []
@@ -512,7 +532,8 @@ class A1Residual(BaseTask):
     # ## Added by Mateo: Get third person and FPV RGB images from simulation
     def get_camera_images(self):
         images = []
-        for i in range(self.num_envs):
+        # for i in range(self.num_envs):
+        for i in range(1):
             third_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][0], gymapi.IMAGE_COLOR)
             third_person_image = third_person_image.reshape(third_person_image.shape[0], -1, 4)[..., :3]  ## From https://forums.developer.nvidia.com/t/confusion-over-get-camera-image-output/210675
             first_person_image = self.gym.get_camera_image(self.sim, self.envs[i], self.camera_handles[i][1], gymapi.IMAGE_COLOR)
@@ -526,7 +547,6 @@ class A1Residual(BaseTask):
     def get_pretrained_action(self, obs):
         # import ipdb;ipdb.set_trace()
         with torch.no_grad():
-            # self.pretrained_action = torch.zeros(self.num_envs, self.num_actions, device=self.device)
             self.pretrained_action = self.policy(obs.detach()).to(self.device)
         return self.pretrained_action
 
@@ -628,15 +648,16 @@ class A1Residual(BaseTask):
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
-        self.commands[env_ids, 0] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_x[0], self.command_ranges.lin_vel_x[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        self.commands[env_ids, 1] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_y[0], self.command_ranges.lin_vel_y[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        if self.commands_cfg.heading_command:
-            self.commands[env_ids, 3] = torch_utils.torch_rand_float(self.command_ranges.heading[0], self.command_ranges.heading[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        else:
-            self.commands[env_ids, 2] = torch_utils.torch_rand_float(self.command_ranges.ang_vel_yaw[0], self.command_ranges.ang_vel_yaw[1], (len(env_ids), 1), device=self.device).squeeze(1)
+        if not self.commands_cfg.use_fixed_commands:
+            self.commands[env_ids, 0] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_x[0], self.command_ranges.lin_vel_x[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            self.commands[env_ids, 1] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_y[0], self.command_ranges.lin_vel_y[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            if self.commands_cfg.heading_command:
+                self.commands[env_ids, 3] = torch_utils.torch_rand_float(self.command_ranges.heading[0], self.command_ranges.heading[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            else:
+                self.commands[env_ids, 2] = torch_utils.torch_rand_float(self.command_ranges.ang_vel_yaw[0], self.command_ranges.ang_vel_yaw[1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+            # set small commands to zero
+            self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -819,9 +840,8 @@ class A1Residual(BaseTask):
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
         # create some wrapper tensors for different slices
-        self.robot_idxs = [i for i, value in enumerate(self.actor_handles) if value == 0]
-        self.root_states = gymtorch.wrap_tensor(actor_root_state)[self.robot_idxs]  ## Allows for more than one body per environment, assumes asset handle for robot is 0
-        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)  ## Assumes no actors other than the robots have any joints.
+        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_quat = self.root_states[:, 3:7]
@@ -1132,7 +1152,8 @@ class A1Residual(BaseTask):
         
         ## Add two cameras per environment: one third-person for training viz, and one attached to the head of the robot
         self.camera_handles = [[]]
-        for i in range(self.num_envs):
+        # for i in range(self.num_envs):
+        for i in range(1):
             self.camera_handles.append([])
             camera_properties = gymapi.CameraProperties()
             camera_properties.width = 360
@@ -1469,27 +1490,34 @@ class A1Residual(BaseTask):
     
     #------------ witp rewards----------------
     def _reward_witp_abs_dyaw(self):
-        # Assumes only one robot
-        assert self.num_envs == 1, "Walk in the Park adaptation only works for num_envs = 1"
         # Penalize any angular velocity
         dyaw_abs = torch.abs(self.base_ang_vel[:, 2])
         return -dyaw_abs
 
     def _reward_witp_cos_pitch_times_lin_vel(self):
-        # Assumes only one robot 
-        assert self.num_envs == 1, "Walk in the Park adaptation only works for num_envs = 1"
         # Reward forward velocity times cos(pitch)
-        from dm_control.utils import rewards
         move_speed = 0.5  ## m/s
         roll, pitch, yaw = torch_utils.get_euler_xyz(self.base_quat)
-        cos_pitch = torch.cos(pitch).cpu().numpy()  ## This is wrong, this is dpitch, want just pitch
-        x_velocity = self.base_lin_vel[:, 0].cpu().numpy()
-        tolerance = rewards.tolerance(cos_pitch * x_velocity,
-                               bounds=(move_speed, 2 * move_speed),
-                               margin=2 * move_speed,
-                               value_at_margin=0,
-                               sigmoid='linear')
-        return torch.from_numpy(tolerance).to(self.device)
+        cos_pitch = torch.cos(pitch)
+        x_velocity = self.base_lin_vel[:, 0]
+        # from dm_control.utils import rewards
+        # tolerance = rewards.tolerance(cos_pitch * x_velocity,
+        #                        bounds=(move_speed, 2 * move_speed),
+        #                        margin=2 * move_speed,
+        #                        value_at_margin=0,
+        #                        sigmoid='linear')
+        cos_pitch_times_vel = cos_pitch * x_velocity
+        bounds = (move_speed, 2 * move_speed)
+        lower, upper = bounds
+        margin = 2*move_speed
+        in_bounds = torch.logical_and(lower <= cos_pitch_times_vel, cos_pitch_times_vel <= upper)
+        d = torch.where(cos_pitch_times_vel < lower, lower - cos_pitch_times_vel, cos_pitch_times_vel - upper) / margin
+        value_at_margin = 0.1
+        scale = 1-value_at_margin
+        scaled_x = d*scale
+        sigmoid = torch.where(abs(scaled_x) < 1, 1 - scaled_x, 0.0)
+        value = torch.where(in_bounds, 1.0, sigmoid)
+        return value
     #-------------------------------------------------
     #------------ diagnostic functions----------------
     #-------------------------------------------------
@@ -1502,6 +1530,12 @@ class A1Residual(BaseTask):
         return torch.mean(self.action_change.abs(), dim=1)
 
     #------------ base link diagnostics ----------------
+    def _diagnostic_lin_vel_x(self):
+        return self.base_lin_vel[:, 0].abs()
+    
+    def _diagnostic_lin_vel_y(self):
+        return self.base_lin_vel[:, 1].abs()
+    
     def _diagnostic_lin_vel_z(self):
         return self.base_lin_vel[:, 2].abs()
 
@@ -1562,3 +1596,26 @@ class A1Residual(BaseTask):
 
     def _diagnostic_stumble(self):
         return torch.sum(self.stumbles, dim=1).float()
+
+    #------------ command diagnostics ----------------
+    def _diagnostic_command_lin_vel_x(self):
+        return self.commands[:, 0]
+    
+    def _diagnostic_command_lin_vel_y(self):
+        return self.commands[:, 1]
+    
+    def _diagnostic_command_ang_vel_yaw(self):
+        return self.commands[:, 2]
+    
+    def _diagnostic_command_heading(self):
+        return self.commands[:, 3]
+
+    #------------ policy diagnostics ----------------
+    def _diagnostic_pretrained_policy_magnitude(self):
+        return torch.norm(self.pretrained_action, dim=1)
+    
+    def _diagnostic_finetuned_policy_magnitude(self):
+        return torch.norm(self.input_actions, dim=1)
+    
+    def _diagnostic_final_policy_magnitude(self):
+        return torch.norm(self.actions, dim=1)

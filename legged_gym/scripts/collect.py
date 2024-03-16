@@ -27,7 +27,6 @@ import torch
 import gymnasium as gym
 
 def insert_batch_into_replay_buffer(replay_buffer, observations, actions, rewards, dones, next_observations, infos, observation_labels):
-    # import ipdb;ipdb.set_trace()
     ## Obtain mask
     if 'time_outs' not in infos:  ## No episode was terminated, so should just take into account dones (should all be False)
          masks = torch.logical_not(dones).float()
@@ -84,6 +83,7 @@ class CollectScriptConfig:
             get_commands_from_joystick = "${use_joystick}",
             sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
             critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+            extra_sensors=("base_quat",)
         ),
         sim = empty_cfg(SimConfig)(
             device = "${device}",
@@ -145,6 +145,7 @@ def main(cfg: CollectScriptConfig):
     env.reset()
     obs = env.get_observations()
     critic_obs = env.get_critic_observations()
+    extra_obs = env.get_extra_observations()
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
     resume_path = get_load_path(experiment_path, checkpoint=cfg.train.runner.checkpoint)
@@ -158,16 +159,15 @@ def main(cfg: CollectScriptConfig):
 
     log.info(f"6. Instantiating replay buffer.")
     dataset_size = 1000000#0  ## Need to make this a config param. Rn if I add to config it gets rid of it during merge seems like
-    # import ipdb;ipdb.set_trace()
     save_buffer_path = osp.join(cfg.train.log_dir, f"dataset_{resume_path.split('/')[-2]+'_'+resume_path.split('/')[-1][:-3]}_{human_format(dataset_size)}.pkl")
-    num_obs = env.num_critic_obs
+    num_obs = env.num_critic_obs + env.num_extra_obs
     obs_limit = cfg.task.normalization.clip_observations
     observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(num_obs,))
 
     num_actions = env.num_actions
     action_limit = cfg.task.normalization.clip_actions
     action_space = gym.spaces.Box(low=-action_limit, high=action_limit, shape=(num_actions,))
-    sensors =  cfg.task.observation.sensors + cfg.task.observation.critic_privileged_sensors
+    sensors =  cfg.task.observation.sensors + cfg.task.observation.critic_privileged_sensors + cfg.task.observation.extra_sensors
     observation_labels = {sensor_name:(0, 0) for sensor_name in sensors}
     observation_labels['projected_gravity'] = (0, 3)
     observation_labels['commands'] = (3, 6)
@@ -180,7 +180,7 @@ def main(cfg: CollectScriptConfig):
     observation_labels['terrain_height'] = (49, 50)
     observation_labels['friction'] = (50, 51)
     observation_labels['base_mass'] = (51, 52)
-    # observation_labels['base_quat'] = (52, 56)
+    observation_labels['base_quat'] = (52, 56)
 
     replay_buffer = ReplayBuffer(observation_space, action_space, capacity=dataset_size, next_observation_space=observation_space, observation_labels=observation_labels)
 
@@ -189,19 +189,21 @@ def main(cfg: CollectScriptConfig):
     num_steps = int(cfg.episode_length_s / env.dt)
     # for i in range(num_steps):
     while len(replay_buffer) < dataset_size:
-        # import pdb;pdb.set_trace()
         actions = policy(obs.detach())
         new_obs, new_critic_obs, rewards, dones, infos, *_ = env.step(actions.detach())
+        new_extra_obs = env.get_extra_observations()
         duration = time.time() - current_time
         if duration < env.dt:
             time.sleep(env.dt - duration)
         current_time = time.time()
 
         print(f"replay_buffer size: {len(replay_buffer)}")
-        insert_batch_into_replay_buffer(replay_buffer, critic_obs, actions, rewards, dones, new_critic_obs, infos, observation_labels)
-        # import pdb;pdb.set_trace()
+        buffer_observations = torch.concatenate([critic_obs, extra_obs], dim=-1)
+        buffer_new_observations = torch.concatenate([new_critic_obs, new_extra_obs], dim=-1)
+        insert_batch_into_replay_buffer(replay_buffer, buffer_observations, actions, rewards, dones, buffer_new_observations, infos, observation_labels)
         obs = new_obs
         critic_obs = new_critic_obs
+        extra_obs = new_extra_obs
 
     log.info(f"8. Save replay buffer here: {save_buffer_path}")
     with open(save_buffer_path, 'wb') as f:

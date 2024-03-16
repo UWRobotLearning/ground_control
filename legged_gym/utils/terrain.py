@@ -16,7 +16,6 @@ from configs.definitions import TerrainConfig
 
 class Terrain:
     def __init__(self, cfg: TerrainConfig, num_robots) -> None:
-
         self.cfg = cfg
         self.num_robots = num_robots
         self.type = cfg.mesh_type
@@ -66,7 +65,16 @@ class Terrain:
             terrain = self.make_terrain(choice, difficulty)
             self.add_terrain_to_map(terrain, i, j)
 
-    def curiculum(self):
+    def selected_terrain(self):
+        terrain_type = self.cfg.terrain_kwargs['type']
+        difficulty = self.cfg.terrain_kwargs['difficulty']
+        for k in range(self.num_sub_terrains):
+            # Env coordinates in the world
+            (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
+            terrain = self.make_selected_terrain(terrain_type, difficulty)
+            self.add_terrain_to_map(terrain, i, j)
+
+    def curriculum(self):
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
                 difficulty = i / self.cfg.num_rows
@@ -75,21 +83,21 @@ class Terrain:
                 terrain = self.make_terrain(choice, difficulty)
                 self.add_terrain_to_map(terrain, i, j)
 
-    def selected_terrain(self):
-        terrain_type = self.cfg.terrain_kwargs.pop('type')
-        for k in range(self.num_sub_terrains):
-            # Env coordinates in the world
-            (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
+    # def selected_terrain(self):
+    #     terrain_type = self.cfg.terrain_kwargs.pop('type')
+    #     for k in range(self.num_sub_terrains):
+    #         # Env coordinates in the world
+    #         (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
 
-            terrain = terrain_utils.SubTerrain("terrain",
-                              width=self.width_per_env_pixels,
-                              length=self.width_per_env_pixels,
-                              vertical_scale=self.vertical_scale,
-                              horizontal_scale=self.horizontal_scale)
+    #         terrain = terrain_utils.SubTerrain("terrain",
+    #                           width=self.width_per_env_pixels,
+    #                           length=self.width_per_env_pixels,
+    #                           vertical_scale=self.vertical_scale,
+    #                           horizontal_scale=self.horizontal_scale)
 
-            # TODO: eval is dangerous!
-            eval(terrain_type)(terrain, **self.cfg.terrain_kwargs.terrain_kwargs)
-            self.add_terrain_to_map(terrain, i, j)
+    #         # TODO: eval is dangerous!
+    #         eval(terrain_type)(terrain, **self.cfg.terrain_kwargs.terrain_kwargs)
+    #         self.add_terrain_to_map(terrain, i, j)
 
     # Ege - added ability to generate valley-like terrain
     def valley_terrain(self):
@@ -296,6 +304,48 @@ class Terrain:
             terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05,
                                                  step=self.cfg.terrain_smoothness, downsampled_scale=0.2)
             terrain.height_field_raw[0:terrain.length // 2, :] = 0
+
+        return terrain
+    
+    def make_selected_terrain(self, terrain_type, difficulty):
+        # TODO: why does this exist if we also have the terrain multiplexing stuff at the top?
+        # difficulty is between 0 and 1
+        terrain = terrain_utils.SubTerrain(   "terrain",
+                                width=self.width_per_env_pixels,
+                                length=self.width_per_env_pixels,
+                                vertical_scale=self.cfg.vertical_scale,
+                                horizontal_scale=self.cfg.horizontal_scale)
+        slope = difficulty * 0.4 # in radians (affects straight slope and noisy terrain)
+        step_height = 0.05 + 0.18 * difficulty # 23 cm height (may want to decrease for blind locomotion, e.g., to 13 cm)
+        discrete_obstacles_height = 0.05 + difficulty * 0.2
+        stepping_stones_size = 1.5 * (1.05 - difficulty)
+        stone_distance = 0.05 if difficulty==0 else 0.1
+        gap_size = 1. * difficulty
+        pit_depth = 1. * difficulty
+        
+        if terrain_type == "flat":
+            return terrain
+        elif terrain_type == "rough":
+            terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
+        elif terrain_type == "smooth_down_slope":
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=3.)
+        elif terrain_type == "smooth_up_slope":
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+        elif terrain_type == "rough_down_slope":
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=3.)
+            terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
+        elif terrain_type == "rough_up_slope":
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
+        elif terrain_type == "stairs_up":
+            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_height, platform_size=3.)
+        elif terrain_type == "stairs_down":
+            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-step_height, platform_size=3.)
+        elif terrain_type == "discrete":
+            num_rectangles = 20
+            rectangle_min_size = 1.
+            rectangle_max_size = 2.
+            terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size, rectangle_max_size, num_rectangles, platform_size=3.)
 
         return terrain
 

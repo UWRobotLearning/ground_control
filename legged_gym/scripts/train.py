@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 # from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig
+from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, ClippedLocomotionTaskConfig, ForwardLocomotionTaskConfig, ForwardClippedLocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1 import A1

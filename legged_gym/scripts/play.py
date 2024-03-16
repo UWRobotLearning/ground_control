@@ -12,7 +12,7 @@ from omegaconf import OmegaConf, MISSING
 
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
-                                 SimConfig, RunnerConfig, TerrainConfig)
+                                 SimConfig, RunnerConfig, TerrainConfig, ControlConfig)
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 from legged_gym.envs.a1 import A1
@@ -53,7 +53,17 @@ class PlayScriptConfig:
             curriculum = False
         ),
         noise = NoNoiseConfig(),
-        domain_rand = NoDomainRandConfig()
+        domain_rand = NoDomainRandConfig(),
+        # control = ControlConfig(
+        #     # decimation=10,
+        #     clip_setpoint=True,
+        #     joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        #     joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        #     # stiffness=dict(joint=60.),  #20.,
+        #     # damping=dict(joint=10.),  #0.5,
+        #     # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
+        #     # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
+        # )
     ) 
     train: TrainConfig = empty_cfg(TrainConfig)(
         device = "${device}",

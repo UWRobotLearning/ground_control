@@ -43,6 +43,8 @@ class BaseTask:
         self.num_envs = self.env_cfg.num_envs
         self.num_obs = sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.sensors])
         self.num_critic_obs = self.num_obs + sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.critic_privileged_sensors])
+        self.num_residual_obs = sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.residual_sensors])
+        self.num_extra_obs = sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.extra_sensors])
         self.num_actions = 12
         self.history_steps = self.observation_cfg.history_steps
 
@@ -60,6 +62,8 @@ class BaseTask:
         self.episode_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
         self.time_out_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self.critic_obs_buf = torch.zeros(self.num_envs, self.num_critic_obs, device=self.device, dtype=torch.float)
+        self.residual_obs_buf = torch.zeros(self.num_envs, self.num_residual_obs, device=self.device, dtype=torch.float)
+        self.extra_obs_buf = torch.zeros(self.num_envs, self.num_extra_obs, device=self.device, dtype=torch.float)
 
         self.extras = {}
 
@@ -93,6 +97,12 @@ class BaseTask:
     def get_critic_observations(self):
         return self.critic_obs_buf
 
+    def get_residual_observations(self):
+        return self.residual_obs_buf
+    
+    def get_extra_observations(self):
+        return self.extra_obs_buf
+    
     def reset_idx(self, env_ids):
         """Reset selected robots"""
         raise NotImplementedError

@@ -359,7 +359,7 @@ class A1(BaseTask):
     def compute_reward(self):
         """ Compute rewards
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
-            adds each terms to the episode sums and to the total reward
+            adds each terms to the episode sums andself.critic_obs_buf to the total reward
         """
         self.rew_buf[:] = 0.
         for i in range(len(self.reward_functions)):
@@ -393,6 +393,15 @@ class A1(BaseTask):
             self.commands[:, 0] = lin_vel_x
             self.commands[:, 1] = lin_vel_y
             self.commands[:, 2] = ang_vel
+        elif self.commands_cfg.use_fixed_commands:
+            lin_vel_x = self.commands_cfg.fixed_commands.lin_vel_x
+            lin_vel_y = self.commands_cfg.fixed_commands.lin_vel_y
+            ang_vel_yaw = self.commands_cfg.fixed_commands.ang_vel_yaw
+            heading = self.commands_cfg.fixed_commands.heading
+            self.commands[:, 0] = lin_vel_x
+            self.commands[:, 1] = lin_vel_y
+            self.commands[:, 2] = ang_vel_yaw
+            # self.commands[:, 3] = heading  ## Not sure if this should be used/set
 
         sensors = self.observation_cfg.sensors + self.observation_cfg.critic_privileged_sensors
         self.critic_obs_buf = self._compute_observations(sensors, self.normalization_cfg.normalize)
@@ -401,6 +410,10 @@ class A1(BaseTask):
             obs = self.critic_obs_buf[..., :self.num_obs]
             self.critic_obs_buf[..., :self.num_obs] += (2*torch.rand_like(obs) - 1) * self.noise_scale_vec
         self.obs_buf = self.critic_obs_buf[:, :self.num_obs].clone()
+
+        ## Get extra sensors
+        extra_sensors = self.observation_cfg.extra_sensors
+        self.extra_obs_buf = self._compute_observations(extra_sensors, normalize=False)
 
     def _compute_observations(self, sensors: Tuple[str], normalize=True):
         obs_list = []
@@ -611,15 +624,16 @@ class A1(BaseTask):
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
-        self.commands[env_ids, 0] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_x[0], self.command_ranges.lin_vel_x[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        self.commands[env_ids, 1] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_y[0], self.command_ranges.lin_vel_y[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        if self.commands_cfg.heading_command:
-            self.commands[env_ids, 3] = torch_utils.torch_rand_float(self.command_ranges.heading[0], self.command_ranges.heading[1], (len(env_ids), 1), device=self.device).squeeze(1)
-        else:
-            self.commands[env_ids, 2] = torch_utils.torch_rand_float(self.command_ranges.ang_vel_yaw[0], self.command_ranges.ang_vel_yaw[1], (len(env_ids), 1), device=self.device).squeeze(1)
+        if not self.commands_cfg.use_fixed_commands:
+            self.commands[env_ids, 0] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_x[0], self.command_ranges.lin_vel_x[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            self.commands[env_ids, 1] = torch_utils.torch_rand_float(self.command_ranges.lin_vel_y[0], self.command_ranges.lin_vel_y[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            if self.commands_cfg.heading_command:
+                self.commands[env_ids, 3] = torch_utils.torch_rand_float(self.command_ranges.heading[0], self.command_ranges.heading[1], (len(env_ids), 1), device=self.device).squeeze(1)
+            else:
+                self.commands[env_ids, 2] = torch_utils.torch_rand_float(self.command_ranges.ang_vel_yaw[0], self.command_ranges.ang_vel_yaw[1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+            # set small commands to zero
+            self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -802,9 +816,8 @@ class A1(BaseTask):
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
         # create some wrapper tensors for different slices
-        self.robot_idxs = [i for i, value in enumerate(self.actor_handles) if value == 0]
-        self.root_states = gymtorch.wrap_tensor(actor_root_state)[self.robot_idxs]  ## Allows for more than one body per environment, assumes asset handle for robot is 0
-        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)  ## Assumes no actors other than the robots have any joints.
+        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_quat = self.root_states[:, 3:7]
@@ -1477,7 +1490,7 @@ class A1(BaseTask):
         d = torch.where(cos_pitch_times_vel < lower, lower - cos_pitch_times_vel, cos_pitch_times_vel - upper) / margin
         value_at_margin = 0.1
         scale = 1-value_at_margin
-        scaled_x = cos_pitch_times_vel*scale
+        scaled_x = d*scale
         sigmoid = torch.where(abs(scaled_x) < 1, 1 - scaled_x, 0.0)
         value = torch.where(in_bounds, 1.0, sigmoid)
         return value

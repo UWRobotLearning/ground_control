@@ -39,6 +39,8 @@ class ObservationConfig:
     history_steps: int = 1 # number of steps of history to include in policy observation
     sensors: Tuple[str, ...] = ("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action")
     critic_privileged_sensors: Tuple[str, ...] = ("base_lin_vel", "base_ang_vel", "terrain_height")
+    residual_sensors: Tuple[str, ...] = ("base_lin_vel", "base_ang_vel", "terrain_height")
+    extra_sensors: Tuple[str, ...] = ("base_quat",)
     fast_compute_foot_pos: bool = True # if True, about 12x faster with a foot position error of 1e-5 meters
 
 @dataclass
@@ -81,6 +83,15 @@ class CommandsConfig:
         ang_vel_yaw: Tuple[float, float] = (-1., 1.) # min max [rad/s]
         heading: Tuple[float, float] = (-np.pi, np.pi) # min max [rad]
     ranges: CommandRangesConfig = CommandRangesConfig()
+
+    @dataclass
+    class FixedCommands:
+        lin_vel_x: float = 1.0
+        lin_vel_y: float = 0.0
+        ang_vel_yaw: float = 0.0
+        heading: float = 0.0
+    fixed_commands: FixedCommands = FixedCommands()
+    use_fixed_commands: bool = False
 
 @dataclass
 class InitStateConfig:
@@ -201,6 +212,7 @@ class RewardsConfig:
 @dataclass
 class NormalizationConfig:
     normalize: bool = True
+    normalize_residual: bool = False
     clip_observations: float = 100.
     clip_actions: float = 100.
 
@@ -334,8 +346,8 @@ class RunnerConfig:
     checkpoint: int = -1 # -1 = last saved model
 
     # Logging with Weights and Biases
-    use_wandb: bool = False #True
-    log_videos: bool = False #True
+    use_wandb: bool = True
+    log_videos: bool = True
     video_frequency: Optional[int] = 1 ## How often to save videos, every <frequency> episodes
 
 @dataclass

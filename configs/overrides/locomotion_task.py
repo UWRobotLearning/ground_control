@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
                                  RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig, NormalizationConfig)
-from configs.overrides.terrain import FlatTerrainConfig
-from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig
+from configs.overrides.terrain import FlatTerrainConfig, TrimeshTerrainConfig, RoughFlatConfig
+from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig, MoveFwdRewardsConfig
+from configs.overrides.domain_rand import NoDomainRandConfig
+from configs.overrides.noise import NoNoiseConfig
 
 #########
 # Task
@@ -13,6 +15,31 @@ from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewar
 
 @dataclass
 class LocomotionTaskConfig(TaskConfig):
+    terrain: TerrainConfig = TrimeshTerrainConfig() # FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        )
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class ClippedLocomotionTaskConfig(TaskConfig):
     terrain: TerrainConfig = FlatTerrainConfig()
     rewards: RewardsConfig = LeggedGymRewardsConfig()
     observation: ObservationConfig = ObservationConfig(
@@ -34,6 +61,81 @@ class LocomotionTaskConfig(TaskConfig):
     )
     asset: AssetConfig = AssetConfig(
         self_collisions=False,
+    )
+    control: ControlConfig = ControlConfig(
+        decimation=10,
+        clip_setpoint=True,
+        joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        # stiffness=dict(joint=60.),  #20.,
+        # damping=dict(joint=10.),  #0.5,
+        # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
+        # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
+    )
+
+@dataclass
+class ForwardLocomotionTaskConfig(TaskConfig):
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x = (0.49, 0.5), # min max [m/s]
+            lin_vel_y = (0., 0.), # min max [m/s]
+            ang_vel_yaw = (0., 0.), # min max [rad/s]
+            heading = (0., 0.), # min max [rad]
+        )
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class ForwardClippedLocomotionTaskConfig(TaskConfig):
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x = (0.49, 0.5), # min max [m/s]
+            lin_vel_y = (0., 0.), # min max [m/s]
+            ang_vel_yaw = (0., 0.), # min max [rad/s]
+            heading = (0., 0.), # min max [rad]
+        )
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True,
+        joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        # stiffness=dict(joint=60.),  #20.,
+        # damping=dict(joint=10.),  #0.5,
+        # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
+        # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
     )
 
 
@@ -91,7 +193,7 @@ class WITPLocomotionTaskConfig(TaskConfig):
         self_collisions=False,
     )
     control: ControlConfig = ControlConfig(
-        decimation=10,
+        # decimation=10,
         clip_setpoint=True,
         joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
         joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
@@ -103,6 +205,53 @@ class WITPLocomotionTaskConfig(TaskConfig):
     env: EnvConfig = EnvConfig(
         episode_length_s=5
     )
+
+@dataclass
+class WITPUnclippedLocomotionTaskConfig(TaskConfig):
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("motor_pos_unshifted", "motor_vel", "last_action", "base_quat", "base_ang_vel", "base_lin_vel"),
+        critic_privileged_sensors=(),
+    )
+    normalization: NormalizationConfig = NormalizationConfig(
+        normalize=False
+    )
+    noise: NoiseConfig = NoiseConfig(
+        add_noise=False
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+        default_joint_angles=WITP_INIT_JOINT_ANGLES
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    env: EnvConfig = EnvConfig(
+        episode_length_s=5
+    )
+    # control: ControlConfig = ControlConfig(
+    #     decimation=10
+    # )
 
 
 
@@ -132,8 +281,186 @@ class ResidualLocomotionTaskConfig(TaskConfig):
         self_collisions=False,
     )
 
+    noise = NoNoiseConfig(),  ## TODO: Not sure if needed or not here
+    domain_rand = NoDomainRandConfig(),  ## TODO: Not sure if needed or not 
 
+@dataclass
+class ResidualWITPLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_residual.A1Residual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+    # observation: ObservationConfig = ObservationConfig(
+    #     sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+    #     critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    # )
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        residual_sensors=("motor_pos_unshifted", "motor_vel", "last_action", "base_quat", "base_ang_vel", "base_lin_vel"),
+    )
+    # normalization: NormalizationConfig = NormalizationConfig(
+    #     normalize=False
+    # )
 
+    noise: NoiseConfig = NoiseConfig(
+        add_noise=False
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        randomize_friction=False,
+        randomize_base_mass=False,
+        randomize_gains=False,
+        push_robots=False
+    )
+
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+        default_joint_angles=WITP_INIT_JOINT_ANGLES
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    control: ControlConfig = ControlConfig(
+        # decimation=10,
+        clip_setpoint=True,
+        joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        # stiffness=dict(joint=60.),  #20.,
+        # damping=dict(joint=10.),  #0.5,
+    )
+    env: EnvConfig = EnvConfig(
+        episode_length_s=5
+    )
+
+@dataclass
+class ResidualWITPUnclippedLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_residual.A1Residual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+    # observation: ObservationConfig = ObservationConfig(
+    #     sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+    #     critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    # )
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        residual_sensors=("motor_pos_unshifted", "motor_vel", "last_action", "base_quat", "base_ang_vel", "base_lin_vel"),
+    )
+    # normalization: NormalizationConfig = NormalizationConfig(
+    #     normalize=False
+    # )
+
+    noise: NoiseConfig = NoiseConfig(
+        add_noise=False
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        randomize_friction=False,
+        randomize_base_mass=False,
+        randomize_gains=False,
+        push_robots=False
+    )
+
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+        default_joint_angles=WITP_INIT_JOINT_ANGLES
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    # control: ControlConfig = ControlConfig(
+    #     # decimation=10,
+    #     clip_setpoint=True,
+    #     joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+    #     joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+    #     # stiffness=dict(joint=60.),  #20.,
+    #     # damping=dict(joint=10.),  #0.5,
+    # )
+    env: EnvConfig = EnvConfig(
+        episode_length_s=5
+    )
+
+    
+@dataclass
+class MoveFwdTaskConfig(TaskConfig):
+    terrain: TerrainConfig = RoughFlatConfig()
+    rewards: RewardsConfig = WITPLeggedGymRewardsConfig()
+    # observation: ObservationConfig = ObservationConfig(
+    #     sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+    #     critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+    # )
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("motor_pos_unshifted", "motor_vel", "last_action", "base_quat", "base_ang_vel", "base_lin_vel"),
+        critic_privileged_sensors=(),
+    )
+    normalization: NormalizationConfig = NormalizationConfig(
+        normalize=False
+    )
+    noise: NoiseConfig = NoiseConfig(
+        add_noise=False
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+        default_joint_angles=WITP_INIT_JOINT_ANGLES
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    control: ControlConfig = ControlConfig(
+        # decimation=10,
+        clip_setpoint=True,
+        joint_lower_limit=(-0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8, -0.15, 0.3, -1.8),
+        joint_upper_limit=(0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0, 0.25, 1.1, -1.0),
+        # stiffness=dict(joint=60.),  #20.,
+        # damping=dict(joint=10.),  #0.5,
+        # stiffness : Dict[str, float] = field(default_factory=lambda: dict(joint=20.)), # [N*m/rad]
+        # damping: Dict[str, float] = field(default_factory=lambda: dict(joint=0.5)) # [N*m*s/rad]
+    )
+    env: EnvConfig = EnvConfig(
+        episode_length_s=5
+    )
 
 
 

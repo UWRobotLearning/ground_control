@@ -9,7 +9,7 @@ import numpy as np
 from flax.core import frozen_dict
 # from gymnasium.utils import seeding
 
-from witp.rl.types import DataType
+from rlpd.types import DataType
 
 DatasetDict = Dict[str, DataType]
 
