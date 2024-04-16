@@ -64,7 +64,7 @@ class Flags:
     # env_name: str = 'A1Run-v0'
     # save_dir: str = './tmp/'
     project_name: str = "rlpd_locomotion"
-    offline_ratio: float = 0.0
+    offline_ratio: float = 0.5
     seed: int = 42
     eval_episodes: int = 1
     log_interval: int = 1000
