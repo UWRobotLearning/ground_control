@@ -48,8 +48,8 @@ class TerrainConfig:
     static_friction: float = 1.
     dynamic_friction: float = 1.
     restitution: float = 0.
-    measured_points_x: Tuple[float] = (0.,)
-    measured_points_y: Tuple[float] = (0.,)
+    measured_points_x: Tuple[float, ...] = (0.,)
+    measured_points_y: Tuple[float, ...] = (0.,)
     horizontal_scale: Optional[float] = None # [m]
     vertical_scale: Optional[float] = None # [m]
     selected: bool = False # select a unique terrain type and pass all arguments
