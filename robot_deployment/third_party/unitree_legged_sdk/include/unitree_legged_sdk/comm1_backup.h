@@ -148,7 +148,7 @@ namespace UNITREE_LEGGED_SDK
 		uint8_t speedLevel;                // 0. default low speed. 1. medium speed 2. high speed. during walking, only respond MODE 3
 		float footRaiseHeight;             // (unit: m, default: 0.08m), foot up height while walking
 		float bodyHeight;                  // (unit: m, default: 0.28m),
-		float position[2];                  // (unit: m), desired position in inertial frame
+		float postion[2];                  // (unit: m), desired position in inertial frame
 		float euler[3];                    // (unit: rad), roll pitch yaw in stand mode
 		float velocity[2];                 // (unit: m/s), forwardSpeed, sideSpeed in body frame
 		float yawSpeed;                    // (unit: rad/s), rotateSpeed in body frame
@@ -173,10 +173,7 @@ namespace UNITREE_LEGGED_SDK
 
 	constexpr int HIGH_CMD_LENGTH   = (sizeof(HighCmd));
 	constexpr int HIGH_STATE_LENGTH = (sizeof(HighState));
-  constexpr int LOW_CMD_LENGTH   = (sizeof(LowCmd));
-	constexpr int LOW_STATE_LENGTH = (sizeof(LowState));
 	
-
 }
 
 #endif

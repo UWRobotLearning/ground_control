@@ -1,7 +1,6 @@
-/************************************************************************
-Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
-Use of this source code is governed by the MPL-2.0 license, see LICENSE.
-************************************************************************/
+/*****************************************************************
+ Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
+******************************************************************/
 
 #ifndef _UNITREE_LEGGED_LCM_H_
 #define _UNITREE_LEGGED_LCM_H_
@@ -64,6 +63,7 @@ namespace UNITREE_LEGGED_SDK
         void Get(LowCmd&);
         void Get(HighState&);
         void Get(LowState&);
+        void SetOverTime(float);        // unit:second, will block this long, default 2ms
 
         LCMHandler<HighState>   highStateLCMHandler;
         LCMHandler<LowState>    lowStateLCMHandler;
