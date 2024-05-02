@@ -16,12 +16,12 @@ using namespace UNITREE_LEGGED_SDK;
 
 class RobotInterface {
  public:
-  RobotInterface(uint8_t level) : safe(LeggedType::A1), udp(level) {
-    // InitEnvironment();
-  }
+  RobotInterface(uint8_t level): safe(LeggedType::A1), udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+        udp.InitCmdData(cmd);
+    }
   LowState ReceiveObservation();
   HighState ReceiveHighObservation();
-  void SendCommand(std::array<float, 60> motorcmd);
+  void SendLowCommand(std::array<float, 60> motorcmd);
   void SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
                        float bodyHeight, int mode);
   void Initialize();
@@ -32,6 +32,11 @@ class RobotInterface {
   LowCmd low_cmd = {0};  
   HighState high_state = {0};
   HighCmd high_cmd = {0};
+
+  ~RobotInterface(){
+    cout << "Destroyed Robot Interface" <<endl;
+  }
+
 };
 
 LowState RobotInterface::ReceiveObservation() {
@@ -40,14 +45,14 @@ LowState RobotInterface::ReceiveObservation() {
   return state;
 }
 
-void RobotInterface::SendCommand(std::array<float, 60> motorcmd) {
+void RobotInterface::SendLowCommand(std::array<float, 60> motorcmd) {
   low_cmd.levelFlag = 0xff;
   for (int motor_id = 0; motor_id < 12; motor_id++) {
     low_cmd.motorCmd[motor_id].mode = 0x0A;
-    low_cmd.motorCmd[motor_id].q = motorcmd[motor_id * 5];
-    low_cmd.motorCmd[motor_id].Kp = motorcmd[motor_id * 5 + 1];
-    low_cmd.motorCmd[motor_id].dq = motorcmd[motor_id * 5 + 2];
-    low_cmd.motorCmd[motor_id].Kd = motorcmd[motor_id * 5 + 3];
+    low_cmd.motorCmd[motor_id].q   = motorcmd[motor_id * 5];
+    low_cmd.motorCmd[motor_id].Kp  = motorcmd[motor_id * 5 + 1];
+    low_cmd.motorCmd[motor_id].dq  = motorcmd[motor_id * 5 + 2];
+    low_cmd.motorCmd[motor_id].Kd  = motorcmd[motor_id * 5 + 3];
     low_cmd.motorCmd[motor_id].tau = motorcmd[motor_id * 5 + 4];
   }
   safe.PositionLimit(low_cmd);
@@ -61,19 +66,18 @@ HighState RobotInterface::ReceiveHighObservation() {
   return high_state;
 }
 
-
 void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
                        float bodyHeight, int mode) {
-    high_cmd.levelFlag = 0x00;
-    high_cmd.forwardSpeed = forwardSpeed;
-    high_cmd.sideSpeed = sideSpeed;
-    high_cmd.rotateSpeed = rotateSpeed;
-    high_cmd.bodyHeight = bodyHeight;
+    high_cmd.levelFlag   = 0x00;
+    high_cmd.velocity[0] = forwardSpeed;
+    high_cmd.velocity[1] = sideSpeed;
+    high_cmd.yawSpeed    = rotateSpeed;
+    high_cmd.bodyHeight  = bodyHeight;
 
-    high_cmd.mode = mode;      // 0:idle, default stand      1:forced stand     2:walk continuously
-    high_cmd.roll  = 0;
-    high_cmd.pitch = 0;
-    high_cmd.yaw = 0;
+    high_cmd.mode      = mode;      // 0:idle, default stand      1:forced stand     2:walk continuously
+    high_cmd.euler[0]  = 0;
+    high_cmd.euler[1]  = 0;
+    high_cmd.euler[2]  = 0;
     udp.SetSend(high_cmd);
     udp.Send();
 
@@ -171,20 +175,20 @@ PYBIND11_MODULE(robot_interface, m) {
       .def_readwrite("robotID", &HighState::robotID)
       .def_readwrite("SN", &HighState::SN)
       .def_readwrite("bandWidth", &HighState::bandWidth)
-      .def_readwrite("mode", &HighState::mode)
       .def_readwrite("imu", &HighState::imu)
-      .def_readwrite("forwardSpeed", &HighState::forwardSpeed)
-      .def_readwrite("sideSpeed", &HighState::sideSpeed)
-      .def_readwrite("rotateSpeed", &HighState::rotateSpeed)
-      .def_readwrite("bodyHeight", &HighState::bodyHeight)
-      .def_readwrite("updownSpeed", &HighState::updownSpeed)
-      .def_readwrite("forwardPosition", &HighState::forwardPosition)
-      .def_readwrite("sidePosition", &HighState::sidePosition)
-      .def_readwrite("footPosition2Body", &HighState::footPosition2Body)
-      .def_readwrite("footSpeed2Body", &HighState::footSpeed2Body)
+      .def_readwrite("motorState", &HighState::motorState)
       .def_readwrite("footForce", &HighState::footForce)
       .def_readwrite("footForceEst", &HighState::footForceEst)
-      .def_readwrite("tick", &HighState::tick)
+      .def_readwrite("mode", &HighState::mode)
+      .def_readwrite("progress", &HighState::progress)
+      .def_readwrite("gaitType", &HighState::gaitType)
+      .def_readwrite("footRaiseHeight", &HighState::footRaiseHeight)
+      .def_readwrite("position", &HighState::position)
+      .def_readwrite("bodyHeight", &HighState::bodyHeight)
+      .def_readwrite("velocity", &HighState::velocity)
+      .def_readwrite("yawSpeed", &HighState::yawSpeed)
+      .def_readwrite("footPosition2Body", &HighState::footPosition2Body)
+      .def_readwrite("footSpeed2Body", &HighState::footSpeed2Body)
       .def_readwrite("wirelessRemote", &HighState::wirelessRemote)
       .def_readwrite("reserve", &HighState::reserve)
       .def_readwrite("crc", &HighState::crc);
@@ -197,17 +201,16 @@ PYBIND11_MODULE(robot_interface, m) {
       .def_readwrite("SN", &HighCmd::SN)
       .def_readwrite("bandWidth", &HighCmd::bandWidth)
       .def_readwrite("mode", &HighCmd::mode)
-      .def_readwrite("forwardSpeed", &HighCmd::forwardSpeed)
-      .def_readwrite("sideSpeed", &HighCmd::sideSpeed)
-      .def_readwrite("rotateSpeed", &HighCmd::rotateSpeed)
-      .def_readwrite("bodyHeight", &HighCmd::bodyHeight)
+      .def_readwrite("gaitType", &HighCmd::gaitType)
+      .def_readwrite("speedLevel", &HighCmd::speedLevel)
       .def_readwrite("footRaiseHeight", &HighCmd::footRaiseHeight)
-      .def_readwrite("yaw", &HighCmd::yaw)
-      .def_readwrite("pitch", &HighCmd::pitch)
-      .def_readwrite("roll", &HighCmd::roll)
+      .def_readwrite("bodyHeight", &HighCmd::bodyHeight)
+      .def_readwrite("position", &HighCmd::position)
+      .def_readwrite("euler", &HighCmd::euler)
+      .def_readwrite("velocity", &HighCmd::velocity)
+      .def_readwrite("yawSpeed", &HighCmd::yawSpeed)
       .def_readwrite("led", &HighCmd::led)
       .def_readwrite("wirelessRemote", &HighCmd::wirelessRemote)
-      .def_readwrite("AppRemote", &HighCmd::AppRemote)
       .def_readwrite("reserve", &HighCmd::reserve)
       .def_readwrite("crc", &HighCmd::crc);
 
@@ -223,8 +226,8 @@ PYBIND11_MODULE(robot_interface, m) {
 
   py::class_<RobotInterface>(m, "RobotInterface")
       .def(py::init<uint8_t>())
-      .def("receive_observation", &RobotInterface::ReceiveObservation)
-      .def("send_command", &RobotInterface::SendCommand)
+      .def("receive_low_observation", &RobotInterface::ReceiveObservation)
+      .def("send_low_command", &RobotInterface::SendLowCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)
       .def("send_high_command", &RobotInterface::SendHighCommand);
 
