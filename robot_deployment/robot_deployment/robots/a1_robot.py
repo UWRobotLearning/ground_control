@@ -42,11 +42,21 @@ class A1Robot(a1.A1):
       mpc_body_mass: float = 110 / 9.8,
       mpc_body_inertia: Tuple[float] = np.array(
           (0.027, 0, 0, 0, 0.057, 0, 0, 0, 0.064)) * 5.,
-  ) -> None:
-    self._raw_state = robot_interface.LowState()
+  mode_type = "low") -> None:
+    
     self._contact_force_threshold = np.zeros(4)
+    
     # Send an initial zero command in order to receive state information.
-    self._robot_interface = robot_interface.RobotInterface(0xff)
+    if mode_type == "high":
+       
+       self._robot_interface = robot_interface.RobotInterface(0x00)
+       self._raw_state = robot_interface.HighState()
+       
+    else:
+      self._robot_interface = robot_interface.RobotInterface(0xff)
+      self._raw_state = robot_interface.LowState()
+    
+    self._mode_type = mode_type
     #if not self._check_connection():
     #  raise ConnectionError("Cannot connect to A1, aborting!")
     self._state_estimator = a1_robot_state_estimator.A1RobotStateEstimator(
@@ -60,21 +70,34 @@ class A1Robot(a1.A1):
                      motor_control_mode, mpc_body_height,
                      mpc_body_mass, mpc_body_inertia)
 
+
+  def __del__(self):
+    print("Deleted current A1 node!")
+    del self._robot_interface
+
   def _check_connection(self):
     """
     Returns true if there's a valid connection to the robot. In this case,
     we check that the roll-pitch-yaw measurment of the IMU is non-zero.
     """
-    self._receive_observation()
+    self._receive_low_observation()
     return np.all(self.base_orientation_rpy != 0.)
 
-  def _receive_observation(self) -> None:
-    """Receives observation from robot and saves the state.
+  def _receive_low_observation(self) -> None:
+    """Receives low observation from robot and saves the state.
 
-    Note that the returned state from robot's receive_observation() function
+    Note that the returned state from robot's receive_low_observation() function
     is mutable. So we need to copy the value out.
     """
-    self._raw_state = self._robot_interface.receive_observation()
+    self._raw_state = self._robot_interface.receive_low_observation()
+
+  def _receive_high_observation(self) -> None:
+    """Receives high observation from robot and saves the state.
+
+    Note that the returned state from robot's receive_low_observation() function
+    is mutable. So we need to copy the value out.
+    """
+    self._raw_state = self._robot_interface.receive_high_observation()
 
   def step(self,
            action: MotorCommand,
@@ -93,16 +116,16 @@ class A1Robot(a1.A1):
     # We repeatedly apply action to robot until we've reached
     # the control timestep.
     while time.time() - self.current_time < self.control_timestep:
-      self._apply_action(action, motor_control_mode)
+      self._apply_low_action(action, motor_control_mode)
       time.sleep(self._sleep_time)
-      self._receive_observation()
+      self._receive_low_observation()
       self._state_estimator.update(self._raw_state)
       self._base_xy_position += self.base_velocity[:2] * self._sleep_time # dead reckoning
       self._update_contact_history()
     self.current_time = time.time()
     self._check_motor_temperatures()
 
-  def _apply_action(self,
+  def _apply_low_action(self,
                     action: MotorCommand,
                     motor_control_mode: MotorControlMode = None) -> None:
     """Clips and then apply the motor commands using the motor model.
@@ -131,15 +154,15 @@ class A1Robot(a1.A1):
       raise ValueError('Unknown motor control mode for A1 robot: {}.'.format(
           motor_control_mode))
 
-    self._robot_interface.send_command(command)
+    self._robot_interface.send_low_command(command)
 
   def reset(self, hard_reset: bool = False, reset_time: float = 1.5):
     """Reset the robot to default motor angles."""
     super(A1Robot, self).reset(hard_reset, num_reset_steps=0)
     for _ in range(10):
-      self._robot_interface.send_command(np.zeros(60, dtype=np.float32))
+      self._robot_interface.send_low_command(np.zeros(60, dtype=np.float32))
       time.sleep(0.001)
-      self._receive_observation()
+      self._receive_low_observation()
 
     print("About to reset the robot.")
     initial_motor_position = self.motor_angles
@@ -170,6 +193,17 @@ class A1Robot(a1.A1):
     self._last_reset_time = time.time()
     self._state_estimator.reset()
     self._base_xy_position[:] = 0.
+
+  def damping_mode(self) -> None:
+      self._robot_interface.send_high_command(0., 0., 0., 0., 7)
+
+  def recovery_stand(self) -> None:
+      self._robot_interface.send_high_command(0., 0., 0., 0., 8)
+  
+  def recover_robot(self) -> None:
+    self.damping_mode()
+    time.sleep(1)
+    self.recovery_stand()
 
   @property
   def sim_conf(self):

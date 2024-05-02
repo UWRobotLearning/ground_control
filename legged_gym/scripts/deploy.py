@@ -128,45 +128,50 @@ def main(cfg: DeployScriptConfig):
 
     log.info(f"6. Instantiating robot deployment environment.")
     # create robot environment (either in PyBullet or real world)
-    deploy_env = LocomotionGymEnv(
-        cfg.deployment,
-        cfg.task.observation.sensors,
-        cfg.task.normalization.obs_scales,
-        cfg.task.commands.ranges
-    )
+    
+    
+    while(True):
+        
+        deploy_env = LocomotionGymEnv(
+            cfg.deployment,
+            cfg.task.observation.sensors,
+            cfg.task.normalization.obs_scales,
+            cfg.task.commands.ranges
+        )
 
-    obs, info = deploy_env.reset()
-    for _ in range(1):
-        obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
+        obs, info = deploy_env.reset()
+        for _ in range(1):
+            obs, *_, info = deploy_env.step(deploy_env.default_motor_angles)
 
-    obs_buf = ObservationBuffer(1, isaac_env.num_obs, task_cfg.observation.history_steps, runner.device)
+        obs_buf = ObservationBuffer(1, isaac_env.num_obs, task_cfg.observation.history_steps, runner.device)
 
-    all_actions = []
-    all_infos = None
+        all_actions = []
+        all_infos = None
 
-    log.info(f"7. Running the inference loop.")
-    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
-        # Form observation for policy.
-        obs = torch.tensor(obs, device=runner.device).float()
-        if t == 0:
-            obs_buf.reset([0], obs)
-            all_infos = {k: [v.copy()] for k, v in info.items()}
-        else:
-            obs_buf.insert(obs)
-            for k, v in info.items():
-                all_infos[k].append(v.copy())
+        log.info(f"7. Running the inference loop.")
+        for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
+            # Form observation for policy.
+            obs = torch.tensor(obs, device=runner.device).float()
+            if t == 0:
+                obs_buf.reset([0], obs)
+                all_infos = {k: [v.copy()] for k, v in info.items()}
+            else:
+                obs_buf.insert(obs)
+                for k, v in info.items():
+                    all_infos[k].append(v.copy())
 
-        policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
+            policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
 
-        # Evaluate policy and act.
-        actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-        actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
-        all_actions.append(actions)
-        obs, _, terminated, _, info = deploy_env.step(actions)
+            # Evaluate policy and act.
+            actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
+            actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
+            all_actions.append(actions)
+            obs, _, terminated, _, info = deploy_env.step(actions)
 
-        if terminated:
-            log.warning("Unsafe, terminating!")
-            break
+            if terminated:
+                log.warning("Unsafe, terminating!")
+                deploy_env.recover()
+                break
 
     log.info("8. Exit Cleanly")
     isaac_env.exit()

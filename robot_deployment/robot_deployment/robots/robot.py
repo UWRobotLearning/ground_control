@@ -176,7 +176,7 @@ class Robot:
     self._last_timestamp = self.time_since_reset
     self._step_counter = 0
 
-  def _apply_action(self, action, motor_control_mode=None) -> None:
+  def _apply_low_action(self, action, motor_control_mode=None) -> None:
     torques, observed_torques = self._motor_group.convert_to_torque(
         action, self.motor_angles, self.motor_velocities, motor_control_mode)
     self._pybullet_client.setJointMotorControlArray(
@@ -206,7 +206,7 @@ class Robot:
   def step(self, action, motor_control_mode=None) -> None:
     self._step_counter += 1
     for _ in range(self._sim_conf.action_repeat):
-      self._apply_action(action, motor_control_mode)
+      self._apply_low_action(action, motor_control_mode)
       self._pybullet_client.stepSimulation()
       self._update_contact_history()
 

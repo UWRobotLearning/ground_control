@@ -122,6 +122,37 @@ class LocomotionGymEnv(gym.Env):
         self.timesteps += 1
         return self.get_observation(), 0, terminated, False, self.get_full_observation()
 
+    def recover(self):
+        #destruct robot  
+        del self.robot
+        time.sleep(0.4)
+
+        #construct robot to high mode
+        robot_ctor = a1_robot.A1Robot if self.use_real_robot else a1.A1
+        self.robot = robot_ctor(
+            pybullet_client=self.pybullet_client,
+            sim_conf=self.config,
+            motor_control_mode=MotorControlMode.POSITION,
+            mode_type="high"
+        )
+
+        #recover
+        self.robot.recover_robot()
+        
+        #####################
+        #TODO: Navigation
+        """
+        We can hard code it to go back, however, if we are 
+        receiving GPS waypoints, why not use the default policy
+        to back trace to the GPS waypoint where it was "ok".
+        """
+        #####################
+        time.sleep(0.4)
+
+        #destruct robot
+        del self.robot
+
+
     def render(self):
         view_matrix = self.pybullet_client.computeViewMatrixFromYawPitchRoll(
             cameraTargetPosition=self.robot.base_position,
