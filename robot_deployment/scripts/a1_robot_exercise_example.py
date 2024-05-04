@@ -79,6 +79,7 @@ def main(cfg: Config):
   # del robot
   # print("restarting")
   # time.sleep(3)
+  
   robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
   robot.recover_robot()
   # del robot
