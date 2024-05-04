@@ -6,6 +6,7 @@
 #define _UNITREE_LEGGED_COMM_H_
 
 #include <stdint.h>
+#include <array>
 
 namespace UNITREE_LEGGED_SDK 
 {
@@ -27,10 +28,10 @@ namespace UNITREE_LEGGED_SDK
 
 	typedef struct
 	{
-		float quaternion[4];               // quaternion, normalized, (w,x,y,z)
-		float gyroscope[3];                // angular velocity （unit: rad/s)    (raw data)
-		float accelerometer[3];            // m/(s2)                             (raw data)
-		float rpy[3];                      // euler angle（unit: rad)
+		std::array<float, 4> quaternion;               // quaternion, normalized, (w,x,y,z)
+		std::array<float, 3> gyroscope;                // angular velocity （unit: rad/s)    (raw data)
+		std::array<float, 3> accelerometer;            // m/(s2)                             (raw data)
+		std::array<float, 3> rpy;                      // euler angle（unit: rad)
 		int8_t temperature;
 	} IMU;                                 // when under accelerated motion, the attitude of the robot calculated by IMU will drift.
 
@@ -52,7 +53,7 @@ namespace UNITREE_LEGGED_SDK
 		float dq_raw;                      // current velocity (unit: radian/second)
 		float ddq_raw;
 		int8_t temperature;                // current temperature (temperature conduction is slow that leads to lag)
-		uint32_t reserve[2];
+		std::array<uint32_t, 2> reserve;
 	} MotorState;                          // motor feedback
 
 	typedef struct
@@ -63,7 +64,7 @@ namespace UNITREE_LEGGED_SDK
 		float tau;                         // desired output torque (unit: N.m)
 		float Kp;                          // desired position stiffness (unit: N.m/rad )
 		float Kd;                          // desired velocity stiffness (unit: N.m/(rad/s) )
-		uint32_t reserve[3];
+		std::array<uint32_t, 3> reserve;
 	} MotorCmd;                            // motor control
 
 	typedef struct
@@ -74,11 +75,11 @@ namespace UNITREE_LEGGED_SDK
 		uint32_t SN; 
 		uint8_t bandWidth;
 		IMU imu;
-		MotorState motorState[20];
-		int16_t footForce[4];              // force sensors
-		int16_t footForceEst[4];           // force sensors
+		std::array<MotorState, 20> motorState;
+		std::array<int16_t, 4> footForce;             // force sensors
+		std::array<int16_t, 4> footForceEst;           // force sensors
 		uint32_t tick;                     // reference real-time from motion controller (unit: us)
-		uint8_t wirelessRemote[40];        // wireless commands
+		std::array<uint8_t, 40> wirelessRemote;        // wireless commands
 		uint32_t reserve;
 		uint32_t crc;
 	} LowState;                            // low level feedback
@@ -90,9 +91,9 @@ namespace UNITREE_LEGGED_SDK
 		uint16_t robotID;
 		uint32_t SN;
 		uint8_t bandWidth;
-		MotorCmd motorCmd[20];
-		LED led[4];
-		uint8_t wirelessRemote[40];
+		std::array<MotorCmd, 20> motorCmd;
+		std::array<LED, 4> led;
+		std::array<uint8_t, 40> wirelessRemote;
 		uint32_t reserve;
 		uint32_t crc;
 	} LowCmd;                              // low level control
@@ -105,20 +106,20 @@ namespace UNITREE_LEGGED_SDK
 		uint32_t SN;
 		uint8_t bandWidth;
 		IMU imu;
-		MotorState motorState[20];
-		int16_t footForce[4];
-		int16_t footForceEst[4];
+		std::array<MotorState, 20> motorState;
+		std::array<int16_t, 4> footForce;  
+		std::array<int16_t, 4> footForceEst;
 		uint8_t mode;
 		float progress;
 		uint8_t gaitType;                  // 0.idle  1.trot  2.trot running  3.climb stair  4.trot obstacle
 		float footRaiseHeight;             // (unit: m, default: 0.08m), foot up height while walking
-		float position[3];                 // (unit: m), from own odometry in inertial frame, usually drift
+		std::array<float, 3> position;     // (unit: m), from own odometry in inertial frame, usually drift
 		float bodyHeight;                  // (unit: m, default: 0.28m),
-		float velocity[3];                 // (unit: m/s), forwardSpeed, sideSpeed, rotateSpeed in body frame
+		std::array<float, 3> velocity;     // (unit: m/s), forwardSpeed, sideSpeed, rotateSpeed in body frame
 		float yawSpeed;                    // (unit: rad/s), rotateSpeed in body frame        
-		Cartesian footPosition2Body[4];    // foot position relative to body
-		Cartesian footSpeed2Body[4];       // foot speed relative to body
-		uint8_t wirelessRemote[40];
+		std::array<Cartesian, 4> footPosition2Body;    // foot position relative to body
+		std::array<Cartesian, 4> footSpeed2Body;       // foot speed relative to body
+		std::array<uint8_t, 40> wirelessRemote;
 		uint32_t reserve;
 		uint32_t crc;
 	} HighState;                           // high level feedback
@@ -148,12 +149,12 @@ namespace UNITREE_LEGGED_SDK
 		uint8_t speedLevel;                // 0. default low speed. 1. medium speed 2. high speed. during walking, only respond MODE 3
 		float footRaiseHeight;             // (unit: m, default: 0.08m), foot up height while walking
 		float bodyHeight;                  // (unit: m, default: 0.28m),
-		float position[2];                  // (unit: m), desired position in inertial frame
-		float euler[3];                    // (unit: rad), roll pitch yaw in stand mode
-		float velocity[2];                 // (unit: m/s), forwardSpeed, sideSpeed in body frame
+		std::array<float, 2> position;     // (unit: m), desired position in inertial frame
+		std::array<float, 3> euler;        // (unit: rad), roll pitch yaw in stand mode
+		std::array<float, 2> velocity;     // (unit: m/s), forwardSpeed, sideSpeed in body frame
 		float yawSpeed;                    // (unit: rad/s), rotateSpeed in body frame
-		LED led[4];
-		uint8_t wirelessRemote[40];
+		std::array<LED, 4> led;
+		std::array<uint8_t, 40> wirelessRemote;
 		uint32_t reserve;
 		uint32_t crc;
 	} HighCmd;                             // high level control

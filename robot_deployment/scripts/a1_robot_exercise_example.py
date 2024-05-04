@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pybullet_utils import bullet_client
 import time
 from typing import Tuple
-
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from configs.definitions import DeploymentConfig
 from robot_deployment.robots import a1
@@ -21,7 +20,7 @@ from robot_deployment.robots.motors import MotorCommand
 
 @dataclass
 class Config:
-  use_real_robot: bool = False
+  use_real_robot: bool = True
   deployment: DeploymentConfig = DeploymentConfig(
     use_real_robot="${use_real_robot}",
     timestep=0.002,

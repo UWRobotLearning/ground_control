@@ -7,42 +7,47 @@ Use of this source code is governed by the MPL-2.0 license, see LICENSE.
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-
-#include <array>
-
+#include <array>  
 #include "unitree_legged_sdk/unitree_legged_sdk.h"
 
 using namespace UNITREE_LEGGED_SDK;
 
 class RobotInterface {
  public:
-  RobotInterface(uint8_t level): safe(LeggedType::A1), udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
-        udp.InitCmdData(cmd);
-    }
-  LowState ReceiveObservation();
+  RobotInterface(uint8_t level): safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+        high_udp.InitCmdData(high_cmd);
+  };
+
+  RobotInterface():safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+      high_udp.InitCmdData(high_cmd);
+      low_udp.InitCmdData(low_cmd);
+  };
+
+  LowState ReceiveLowObservation();
   HighState ReceiveHighObservation();
   void SendLowCommand(std::array<float, 60> motorcmd);
   void SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
                        float bodyHeight, int mode);
   void Initialize();
 
-  UDP udp;
+  UDP low_udp;
+  UDP high_udp;
   Safety safe;
-  LowState state = {0};
+  LowState low_state = {0};
   LowCmd low_cmd = {0};  
   HighState high_state = {0};
   HighCmd high_cmd = {0};
 
   ~RobotInterface(){
-    cout << "Destroyed Robot Interface" <<endl;
+    cout << "Destroyed Robot Interface!" <<endl;
   }
 
 };
 
-LowState RobotInterface::ReceiveObservation() {
-  udp.Recv();
-  udp.GetRecv(state);
-  return state;
+LowState RobotInterface::ReceiveLowObservation() {
+  low_udp.Recv();
+  low_udp.GetRecv(low_state);
+  return low_state;
 }
 
 void RobotInterface::SendLowCommand(std::array<float, 60> motorcmd) {
@@ -56,13 +61,13 @@ void RobotInterface::SendLowCommand(std::array<float, 60> motorcmd) {
     low_cmd.motorCmd[motor_id].tau = motorcmd[motor_id * 5 + 4];
   }
   safe.PositionLimit(low_cmd);
-  udp.SetSend(low_cmd);
-  udp.Send();
+  low_udp.SetSend(low_cmd);
+  low_udp.Send();
 }
 
 HighState RobotInterface::ReceiveHighObservation() {
-  udp.Recv();
-  udp.GetRecv(high_state);
+  high_udp.Recv();
+  high_udp.GetRecv(high_state);
   return high_state;
 }
 
@@ -78,8 +83,8 @@ void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float 
     high_cmd.euler[0]  = 0;
     high_cmd.euler[1]  = 0;
     high_cmd.euler[2]  = 0;
-    udp.SetSend(high_cmd);
-    udp.Send();
+    high_udp.SetSend(high_cmd);
+    high_udp.Send();
 
 }
 
@@ -226,7 +231,7 @@ PYBIND11_MODULE(robot_interface, m) {
 
   py::class_<RobotInterface>(m, "RobotInterface")
       .def(py::init<uint8_t>())
-      .def("receive_low_observation", &RobotInterface::ReceiveObservation)
+      .def("receive_low_observation", &RobotInterface::ReceiveLowObservation)
       .def("send_low_command", &RobotInterface::SendLowCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)
       .def("send_high_command", &RobotInterface::SendHighCommand);

@@ -9,6 +9,7 @@
 #include <string.h>
 
 using namespace UNITREE_LEGGED_SDK;
+using namespace std;
 
 class Custom
 {
@@ -52,6 +53,7 @@ void Custom::RobotControl()
     cmd.speedLevel = 0;
     cmd.footRaiseHeight = 0;
     cmd.bodyHeight = 0;
+
     cmd.euler[0]  = 0;
     cmd.euler[1] = 0;
     cmd.euler[2] = 0;
