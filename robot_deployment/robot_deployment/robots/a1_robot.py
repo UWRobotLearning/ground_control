@@ -48,12 +48,13 @@ class A1Robot(a1.A1):
     
     # Send an initial zero command in order to receive state information.
     if mode_type == "high":
-       
+       print("highmode")
        self._robot_interface = robot_interface.RobotInterface(0x00)
+       print("highmode")
        self._raw_state = robot_interface.HighState()
        
     else:
-      self._robot_interface = robot_interface.RobotInterface(0xff)
+      self._robot_interface = robot_interface.RobotInterface()
       self._raw_state = robot_interface.LowState()
     
     self._mode_type = mode_type
@@ -73,6 +74,9 @@ class A1Robot(a1.A1):
 
   def __del__(self):
     print("Deleted current A1 node!")
+    self._delete_robot_interface()
+
+  def _delete_robot_interface(self):
     del self._robot_interface
 
   def _check_connection(self):
@@ -195,12 +199,13 @@ class A1Robot(a1.A1):
     self._base_xy_position[:] = 0.
 
   def damping_mode(self) -> None:
-      self._robot_interface.send_high_command(0., 0., 0., 0., 7)
+      self._robot_interface.send_high_command(0., 0., 0., 0., 0)
 
   def recovery_stand(self) -> None:
-      self._robot_interface.send_high_command(0., 0., 0., 0., 8)
+      self._robot_interface.send_high_command(0., 0., 0., 0., 1)
   
   def recover_robot(self) -> None:
+    print("recovery started")
     self.damping_mode()
     time.sleep(1)
     self.recovery_stand()

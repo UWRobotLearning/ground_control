@@ -65,3 +65,6 @@ runs
 *.egg-info
 __pycache__
 *.sw*
+
+#robot_deployment outputs
+robot_deployment/scripts/outputs*

@@ -16,11 +16,13 @@ class RobotInterface {
  public:
   RobotInterface(uint8_t level): safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
         high_udp.InitCmdData(high_cmd);
+        cout << " High level" << endl;
   };
 
   RobotInterface():safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
       high_udp.InitCmdData(high_cmd);
       low_udp.InitCmdData(low_cmd);
+      cout<<"Low level"<<endl;
   };
 
   LowState ReceiveLowObservation();
@@ -40,6 +42,10 @@ class RobotInterface {
 
   ~RobotInterface(){
     cout << "Destroyed Robot Interface!" <<endl;
+  }
+
+  void DestroyRobotInterface(){
+    this->~RobotInterface();
   }
 
 };
@@ -73,16 +79,19 @@ HighState RobotInterface::ReceiveHighObservation() {
 
 void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
                        float bodyHeight, int mode) {
-    high_cmd.levelFlag   = 0x00;
+    high_udp.GetRecv(high_state);
+    std::cout << "mode is " << mode << std::endl;
+    high_cmd.mode      = mode;      // 0:idle, default stand      1:forced stand     2:walk continuously
+    high_cmd.gaitType  = 0.f;
+    high_cmd.speedLevel = 0;
+    high_cmd.footRaiseHeight = 0.f;
+    high_cmd.bodyHeight  = bodyHeight;
     high_cmd.velocity[0] = forwardSpeed;
     high_cmd.velocity[1] = sideSpeed;
-    high_cmd.yawSpeed    = rotateSpeed;
-    high_cmd.bodyHeight  = bodyHeight;
-
-    high_cmd.mode      = mode;      // 0:idle, default stand      1:forced stand     2:walk continuously
-    high_cmd.euler[0]  = 0;
-    high_cmd.euler[1]  = 0;
-    high_cmd.euler[2]  = 0;
+    high_cmd.yawSpeed    = rotateSpeed;s
+    high_cmd.euler[0]  = 0.f;
+    high_cmd.euler[1]  = 0.f;
+    high_cmd.euler[2]  = 0.f;
     high_udp.SetSend(high_cmd);
     high_udp.Send();
 
@@ -231,6 +240,8 @@ PYBIND11_MODULE(robot_interface, m) {
 
   py::class_<RobotInterface>(m, "RobotInterface")
       .def(py::init<uint8_t>())
+      .def(py::init<>())
+      .def("delete_robot_interface", &RobotInterface::DestroyRobotInterface)
       .def("receive_low_observation", &RobotInterface::ReceiveLowObservation)
       .def("send_low_command", &RobotInterface::SendLowCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)

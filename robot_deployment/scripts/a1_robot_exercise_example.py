@@ -57,16 +57,43 @@ def main(cfg: Config):
   p.loadURDF("plane.urdf")
   p.setGravity(0.0, 0.0, -9.81)
 
-  robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
-  robot.reset()
+  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+  # robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
+  # robot.reset()
 
-  for _ in range(10000):
-    action = get_action(robot, robot.time_since_reset)
-    robot.step(action)
-    if not cfg.deployment.use_real_robot:
-      time.sleep(cfg.deployment.timestep)
-    print(robot.base_orientation_rpy)
+  # for _ in range(500):
+  #   action = get_action(robot, robot.time_since_reset)
+  #   robot.step(action)
+  #   if not cfg.deployment.use_real_robot:
+  #     time.sleep(cfg.deployment.timestep)
+  #   print(robot.base_orientation_rpy)
+
+  # time.sleep(3)
+
+
+  # print("deleteing low")
+  # def remove_robot():
+  #   nonlocal robot
+  #   del robot
+  # remove_robot()
+  # del robot
+  # print("restarting")
+  # time.sleep(3)
+  robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+  robot.recover_robot()
+  # del robot
+  # restart(cfg)
+
+def restart(cfg: Config):
+  print("restarting")
+  connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
+  p = bullet_client.BulletClient(connection_mode=connection_mode)
+  p.setAdditionalSearchPath(osp.join(LEGGED_GYM_ROOT_DIR, 'resources'))
+  p.loadURDF("plane.urdf")
+  p.setGravity(0.0, 0.0, -9.81)
+
+  robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+  robot.recover_robot()
 
 
 if __name__ == "__main__":
