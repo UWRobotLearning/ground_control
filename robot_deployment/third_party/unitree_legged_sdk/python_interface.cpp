@@ -12,6 +12,9 @@ Use of this source code is governed by the MPL-2.0 license, see LICENSE.
 
 using namespace UNITREE_LEGGED_SDK;
 
+#define FLAG 0
+
+#if FLAG
 class RobotInterface {
  public:
   RobotInterface(uint8_t level): safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
@@ -20,10 +23,10 @@ class RobotInterface {
   };
 
   RobotInterface():safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
-      high_udp.InitCmdData(high_cmd);
       low_udp.InitCmdData(low_cmd);
       cout<<"Low level"<<endl;
   };
+
 
   LowState ReceiveLowObservation();
   HighState ReceiveHighObservation();
@@ -88,7 +91,7 @@ void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float 
     high_cmd.bodyHeight  = bodyHeight;
     high_cmd.velocity[0] = forwardSpeed;
     high_cmd.velocity[1] = sideSpeed;
-    high_cmd.yawSpeed    = rotateSpeed;s
+    high_cmd.yawSpeed    = rotateSpeed;
     high_cmd.euler[0]  = 0.f;
     high_cmd.euler[1]  = 0.f;
     high_cmd.euler[2]  = 0.f;
@@ -96,6 +99,103 @@ void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float 
     high_udp.Send();
 
 }
+#else
+/* NEED TO TRY THIS! */
+class RobotInterface {
+ public:
+  RobotInterface(uint8_t level): safe(LeggedType::A1), udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+        udp.SwitchLevel(HIGHLEVEL);
+        udp.InitCmdData(high_cmd);
+        cout << " High level" << endl;
+  }; 
+
+  RobotInterface():safe(LeggedType::A1), udp(LOWLEVEL){
+      
+      /*UDP SANITY CHECK*/
+      cout<<"starting Low level"<<endl;
+      // cout <<"**********************"<<endl;
+      // cout<<"level flag : " <<udp.levelFlag<<endl;
+      // cout<<"connection : "<<udp.connected;
+      // cout<<"Udp state  : "<<udp.udpState;
+      // cout<< "accessibility : "<< udp.accessible;
+      // cout <<"**********************"<<endl;
+      udp.SwitchLevel(LOWLEVEL);
+      udp.InitCmdData(low_cmd);
+  };
+
+
+  LowState ReceiveLowObservation();
+  HighState ReceiveHighObservation();
+  void SendLowCommand(std::array<float, 60> motorcmd);
+  void SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
+                       float bodyHeight, int mode);
+  void Initialize();
+
+  UDP udp;
+  Safety safe;
+  LowState low_state = {0};
+  LowCmd low_cmd = {0};  
+  HighState high_state = {0};
+  HighCmd high_cmd = {0};
+
+  ~RobotInterface(){
+    cout << "Destroyed Robot Interface!" <<endl;
+  }
+
+  void DestroyRobotInterface(){
+    this->~RobotInterface();
+  }
+
+};
+
+LowState RobotInterface::ReceiveLowObservation() {
+  udp.Recv();
+  udp.GetRecv(low_state);
+  return low_state;
+}
+
+void RobotInterface::SendLowCommand(std::array<float, 60> motorcmd) {
+  low_cmd.levelFlag = 0xff;
+  for (int motor_id = 0; motor_id < 12; motor_id++) {
+    low_cmd.motorCmd[motor_id].mode = 0x0A;
+    low_cmd.motorCmd[motor_id].q   = motorcmd[motor_id * 5];
+    low_cmd.motorCmd[motor_id].Kp  = motorcmd[motor_id * 5 + 1];
+    low_cmd.motorCmd[motor_id].dq  = motorcmd[motor_id * 5 + 2];
+    low_cmd.motorCmd[motor_id].Kd  = motorcmd[motor_id * 5 + 3];
+    low_cmd.motorCmd[motor_id].tau = motorcmd[motor_id * 5 + 4];
+  }
+  safe.PositionLimit(low_cmd);
+  udp.SetSend(low_cmd);
+  udp.Send();
+}
+
+HighState RobotInterface::ReceiveHighObservation() {
+  udp.Recv();
+  udp.GetRecv(high_state);
+  return high_state;
+}
+
+void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float rotateSpeed,
+                       float bodyHeight, int mode) {
+    udp.GetRecv(high_state);
+    std::cout << "mode is " << mode << std::endl;
+    high_cmd.levelFlag = 0x00;
+    high_cmd.mode      = mode;      // 0:idle, default stand      1:forced stand     2:walk continuously
+    high_cmd.gaitType  = 0.f;
+    high_cmd.speedLevel = 0;
+    high_cmd.footRaiseHeight = 0.f;
+    high_cmd.bodyHeight  = bodyHeight;
+    high_cmd.velocity[0] = forwardSpeed;
+    high_cmd.velocity[1] = sideSpeed;
+    high_cmd.yawSpeed    = rotateSpeed;
+    high_cmd.euler[0]  = 0.f;
+    high_cmd.euler[1]  = 0.f;
+    high_cmd.euler[2]  = 0.f;
+    udp.SetSend(high_cmd);
+    udp.Send();
+
+}
+#endif
 
 namespace py = pybind11;
 
@@ -252,6 +352,5 @@ PYBIND11_MODULE(robot_interface, m) {
 #else
   m.attr("__version__") = "dev";
 #endif
-
   m.attr("TEST") = py::int_(int(42));
 }

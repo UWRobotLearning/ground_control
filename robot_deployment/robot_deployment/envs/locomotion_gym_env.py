@@ -124,7 +124,7 @@ class LocomotionGymEnv(gym.Env):
 
     def recover(self):
         #destruct robot  
-        del self.robot
+        self.robot._delete_robot_interface()
         time.sleep(0.4)
 
         #construct robot to high mode
@@ -150,7 +150,7 @@ class LocomotionGymEnv(gym.Env):
         time.sleep(0.4)
 
         #destruct robot
-        del self.robot
+        self.robot._delete_robot_interface()
 
 
     def render(self):

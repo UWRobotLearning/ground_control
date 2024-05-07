@@ -49,6 +49,73 @@ def get_action(robot: a1.A1, t):
 
 
 
+
+
+  #Deleting udp instances does not trigger off the respective modes!
+
+  #Although we deleted the udp port instance FOR HIGH LEVEL, the robot IS STILL SET TO SPORT MODE
+  #NEED TO SEND A COMMAND LIKE L2 + B (damping mode) => L1 + L2 + start (Sport mode triggerd off),
+  #this will make sure that the A1 is in normal mode (joint standby state).
+  #After doing that, then we can create a instance of udp low mode and send commands.
+
+  #If we need to to do reset, We first need to delete the udp low instance, the robot would STILL
+  #BE IN NORMAL MODE. NEED TO SEND A COMMAND LIKE L2+B (damping mode) => (run A1_sport_1 exe in the bin of )
+  #the sport mode controller
+
+  #After tdoing L1 + L2 + start (Sport mode triggered off), I was able to switch to normal mode
+  #and I was able to run the low level reset and commands well!!!
+
+  #It seems after I run keep_program alive, and trigger sports mode and trigger it off,
+  #I am still not able to run recovery or any high level commands.
+  #THATTS BECAUSE THE PORT 8082 IS STILL BOUND. is it? 
+
+  #So basically after I trigger the sports mode off, I am able to use low level
+  #but not high level. 
+
+  #But when I set the robot to sports mode using rc, and then lay it down using 
+  #damping mode, I am able to run my High level. Oh that's because it is already set to
+  #sport mode :0. 
+
+  ### So I need to check if I am able to trigger sports mode through keep_program_alive.sh
+  ### And then use high level. Wait, this doesn't work, right? NOPE This doesn't work.
+
+  ##So here it is going to work:
+
+  #INitially to normal mode, hence can use low level cmds.
+  #low level motor cmds => ..=> moment it gets terminated, => trigger sport mode => send recovery..and navigation using A1 sport policy.
+  # =>set to damping mode => trigger sport mode off => robot.reset() =>start over
+
+  #after switching to normal mode, 
+
+  """
+  
+  I'm only familiar with the GO1 robot, but I'd guess they use a similar system.
+On the Go1, there is the Raspberry Pi and the Main Control Board, which work together.
+The Sport Mode is handled by the Pi and the Joint control is handled by the MCB.
+
+To activate Sport Mode, a shell script is run, which then repetitively restarts the sport mode program, in case it fails.
+
+My guess is, that they've mapped this script to the remote control, to turn it on or off.
+
+The SDK on the other hand connects either to the Pi or the MCB, depending on of you are using high- or low-level control.
+The high-level works only if the sport mode is running on the Pi and the low-level control only works, if the sport mode isn't running on the Pi since the ports would otherwise be blocked.
+
+So the UDP messages provided by the SDK are im my eyes not suitable for toggling between normal and sport mode.
+You could try to run another program on the Pi (should be automatically started), which receives messages on a different IP port.
+And that program could then either start or kill the sport mode process.
+  
+  """
+
+  #SWITCH LEVEL DOES NOT WORK
+  #ALthough if you switch to HIGH when constructing robot_interface for low mode, it DOES NOT WORK
+  #But that does not give us the ability to manually switch sports mode and normal mode for high
+  # and low level modes.
+  
+  #Need a way to automate sports mode initially
+
+  #How about using different udp ports for low, and high?
+
+
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: Config):
   connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
@@ -56,46 +123,38 @@ def main(cfg: Config):
   p.setAdditionalSearchPath(osp.join(LEGGED_GYM_ROOT_DIR, 'resources'))
   p.loadURDF("plane.urdf")
   p.setGravity(0.0, 0.0, -9.81)
+  
 
-  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  # robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
-  # robot.reset()
+  robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+  robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
+  robot.reset()
 
-  # for _ in range(500):
+
+  # for _ in range(50):
   #   action = get_action(robot, robot.time_since_reset)
   #   robot.step(action)
   #   if not cfg.deployment.use_real_robot:
   #     time.sleep(cfg.deployment.timestep)
   #   print(robot.base_orientation_rpy)
-
-  # time.sleep(3)
-
-
-  # print("deleteing low")
-  # def remove_robot():
-  #   nonlocal robot
-  #   del robot
-  # remove_robot()
-  # del robot
-  # print("restarting")
-  # time.sleep(3)
   
-  robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+  # time.sleep(1)
+  # print("deleteing low")
+  # robot._delete_robot_interface()
+  # print("restarting")
+  # time.sleep(10)
+
+  robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+  robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
   robot.recover_robot()
+  time.sleep(3)
+  print("deleteing high")
+  robot.damping_mode()
+  robot._delete_robot_interface()
+
+
+
   # del robot
   # restart(cfg)
-
-def restart(cfg: Config):
-  print("restarting")
-  connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
-  p = bullet_client.BulletClient(connection_mode=connection_mode)
-  p.setAdditionalSearchPath(osp.join(LEGGED_GYM_ROOT_DIR, 'resources'))
-  p.loadURDF("plane.urdf")
-  p.setGravity(0.0, 0.0, -9.81)
-
-  robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
-  robot.recover_robot()
-
 
 if __name__ == "__main__":
   main()
