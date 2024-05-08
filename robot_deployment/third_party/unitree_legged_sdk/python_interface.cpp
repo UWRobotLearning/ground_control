@@ -103,7 +103,7 @@ void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float 
 /* NEED TO TRY THIS! */
 class RobotInterface {
  public:
-  RobotInterface(uint8_t level): safe(LeggedType::A1), udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+  RobotInterface(uint8_t level, uint16_t localPort, uint16_t targetPort): safe(LeggedType::A1), udp(localPort, "192.168.123.161", targetPort, sizeof(HighCmd), sizeof(HighState)){
         udp.SwitchLevel(HIGHLEVEL);
         udp.InitCmdData(high_cmd);
         cout << " High level" << endl;
@@ -339,7 +339,7 @@ PYBIND11_MODULE(robot_interface, m) {
       .def_readwrite("RecvLoseError", &UDPState::RecvLoseError);
 
   py::class_<RobotInterface>(m, "RobotInterface")
-      .def(py::init<uint8_t>())
+      .def(py::init<uint8_t, uint16_t, uint16_t>())
       .def(py::init<>())
       .def("delete_robot_interface", &RobotInterface::DestroyRobotInterface)
       .def("receive_low_observation", &RobotInterface::ReceiveLowObservation)

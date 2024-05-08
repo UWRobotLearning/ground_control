@@ -116,6 +116,30 @@ And that program could then either start or kill the sport mode process.
   #How about using different udp ports for low, and high?
 
 
+
+"""
+L2 + B; => L1 + L2 + start (for changing modes)
+3 modes in 3.3.3 (basic, sport, slam)
+
+udp        0      0 192.168.123.161:8008    192.168.123.10:8007     ESTABLISHED 26029/A1_sport_1
+udp        0      0 192.168.123.161:8009    192.168.123.10:8007     ESTABLISHED 26029/A1_sport_1
+
+change
+
+udp        0      0 192.168.123.161:8010    192.168.123.10:8007     ESTABLISHED 19402/A1_sport_2
+udp        0      0 192.168.123.161:8082    192.168.123.12:8081     ESTABLISHED 19402/A1_sport_2
+
+change
+udp        0      0 192.168.123.161:8008    192.168.123.10:8007     ESTABLISHED 26029/A1_sport_1
+udp        0      0 192.168.123.161:8009    192.168.123.10:8007     ESTABLISHED 26029/A1_sport_1
+udp     1536      0 192.168.123.161:8010    192.168.123.10:8007     ESTABLISHED 26029/A1_sport_1
+
+udp     1536      0 192.168.123.161:8010    192.168.123.10:8007     ESTABLISHED 10051/A1_sport_1 (Need this!!)
+
+
+"""
+
+
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: Config):
   connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
@@ -125,9 +149,9 @@ def main(cfg: Config):
   p.setGravity(0.0, 0.0, -9.81)
   
 
-  robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
-  robot.reset()
+  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+  # robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
+  # robot.reset()
 
 
   # for _ in range(50):

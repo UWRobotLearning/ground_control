@@ -48,7 +48,7 @@ class A1Robot(a1.A1):
     
     # Send an initial zero command in order to receive state information.
     if mode_type == "high":
-       self._robot_interface = robot_interface.RobotInterface(0x00)
+       self._robot_interface = robot_interface.RobotInterface(0x00, np.uint16(8090), np.uint16(8082))
        self._raw_state = robot_interface.HighState()
        
     else:
