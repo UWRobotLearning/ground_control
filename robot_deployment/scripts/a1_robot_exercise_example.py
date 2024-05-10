@@ -17,11 +17,14 @@ from configs.definitions import DeploymentConfig
 from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot
 from robot_deployment.robots.motors import MotorCommand
+from robot_deployment.robots.magic import _find_process_name
+import subprocess
+import multiprocessing
 
 @dataclass
 class Config:
-  use_real_robot: bool = True
-  deployment: DeploymentConfig = DeploymentConfig(
+    use_real_robot: bool = True
+    deployment: DeploymentConfig = DeploymentConfig(
     use_real_robot="${use_real_robot}",
     timestep=0.002,
     action_repeat=1,
@@ -91,9 +94,9 @@ def get_action(robot: a1.A1, t):
   
   I'm only familiar with the GO1 robot, but I'd guess they use a similar system.
 On the Go1, there is the Raspberry Pi and the Main Control Board, which work together.
-The Sport Mode is handled by the Pi and the Joint control is handled by the MCB.
 
 To activate Sport Mode, a shell script is run, which then repetitively restarts the sport mode program, in case it fails.
+The Sport Mode is handled by the Pi and the Joint control is handled by the MCB.
 
 My guess is, that they've mapped this script to the remote control, to turn it on or off.
 
@@ -137,8 +140,72 @@ udp     1536      0 192.168.123.161:8010    192.168.123.10:8007     ESTABLISHED 
 udp     1536      0 192.168.123.161:8010    192.168.123.10:8007     ESTABLISHED 10051/A1_sport_1 (Need this!!)
 
 
+SO IT SEEMS only by commanding through rc, when A1_sport_1 is running, It is able to get the above udp
+running, thereby allowing high level commands.
+
+So one way to do this is to keep A1_sport_1 running. And
+
+
+start with low level reset, so that initial motor positions are already set for
+future recovery (involving killing a1_sport_1 exes, and starting high level)
+
+
+1. low level
+    1. keep on sending start sport mode message to a udp port on the PI
+        keep on listening until start sport mode message is received on PI
+
+2. terminate
+3. Delete previous robot_interface
+4. Create High level robot_interface
+   1. keep on sending start sport mode message to a udp port on the PI
+      keep on listening until start sport mode message is received on PI
+   2. keep on querying a port, until a connection is made between PI and MCB
+   3. wait for sport mode initialization is done.
+   4. Send stop sport mode message to host udp port
+   5. close the host udp port.
+3. Start recovery and go into damping mode
+4. Delete current robot_interface
+4. low level
+...
+
+
+
+
 """
 
+def low(cfg, p):
+    robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+    low_robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
+    low_robot.reset()
+    low_robot.delete_robot_interface()
+
+def high(cfg, p):
+    robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+    high_robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+    high_robot.recover_robot()
+    high_robot.delete_robot_interface()
+   
+   
+def initialize(mode_type : str, cfg, p):
+    print(mode_type, '\n\n')
+    robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+    robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type=mode_type)
+    if mode_type == "low":
+       robot.reset()
+       for _ in range(200):
+          action = get_action(robot, robot.time_since_reset)
+          robot.step(action)
+          if not cfg.deployment.use_real_robot:
+            time.sleep(cfg.deployment.timestep)
+          print(robot.base_orientation_rpy)
+    elif mode_type == "high":
+       time.sleep(2)
+       robot.damping_mode()
+       robot.recover_robot()
+       time.sleep(2)
+       robot.damping_mode()
+       
+  
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: Config):
@@ -149,10 +216,53 @@ def main(cfg: Config):
   p.setGravity(0.0, 0.0, -9.81)
   
 
-  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  # robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment)
-  # robot.reset()
 
+  print("starting main.. \n\n")
+
+
+  process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
+  process.start()
+  process.join()
+
+  
+  process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+  process.start()
+  process.join()
+
+
+  process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
+  process.start()
+  process.join()
+
+  # process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+  # process.start()
+  # process.join()
+
+  # process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+  # process.start()
+  # process.join()
+
+  # _find_process_name("python3")
+
+
+  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+  # print(result.stdout)
+
+
+
+  # high_robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+  # high_robot.delete_robot_interface()
+
+  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+  # print(result.stdout)
+
+  
+
+
+  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+  # print(result.stdout)
+
+  # low_robot.delete_robot_interface()
 
   # for _ in range(50):
   #   action = get_action(robot, robot.time_since_reset)
@@ -161,20 +271,22 @@ def main(cfg: Config):
   #     time.sleep(cfg.deployment.timestep)
   #   print(robot.base_orientation_rpy)
   
+
+  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
+  # high_robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
+  # high_robot.recover_robot()
+  
+
+
   # time.sleep(1)
-  # print("deleteing low")
-  # robot._delete_robot_interface()
-  # print("restarting")
-  # time.sleep(10)
+  # print("recovered")
+  # high_robot.damping_mode()
+  
+  # low_robot.reset()
 
-  robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
-  robot.recover_robot()
-  time.sleep(3)
-  print("deleteing high")
-  robot.damping_mode()
-  robot._delete_robot_interface()
-
+  # time.sleep(1)
+  # print("recovered")
+  # high_robot.damping_mode()
 
 
   # del robot

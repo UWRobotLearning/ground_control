@@ -268,6 +268,26 @@ class SimConfig:
         max_gpu_contact_pairs: int = "${evaluate_max_gpu_contact_pairs: ${task.env.num_envs}}"
     physx: PhysxConfig = PhysxConfig()
 
+# Ege - used in the terrain curriculum for the recovery task
+@dataclass
+class CurriculumConfig:
+    success_rate_mean_window: int = 1
+    promotion_success_rate: float = 0.9
+    demotion_success_rate: float = 0.6
+
+# Ege - used in specifying successful end states for the recovery task
+@dataclass
+class GoalStateConfig:
+    min_height_to_goal_ratio: float = 0.7
+    max_height_to_goal_ratio: float = 1.2
+    max_speed: float = 0.25
+    max_angular_vel: float = 0.2
+    max_z_deviation: float = 0.9
+    max_xy_distance: float = 2
+    required_goal_time_s: float = 1
+    reset_on_goal: bool = False
+
+
 
 @dataclass
 class TaskConfig:

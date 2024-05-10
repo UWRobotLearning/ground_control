@@ -11,6 +11,7 @@ from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot_state_estimator
 from robot_deployment.robots.motors import MotorControlMode
 from robot_deployment.robots.motors import MotorCommand
+from robot_deployment.robots.magic import magic_host
 
 # Constants for analytical FK/IK
 COM_OFFSET = -np.array([0.012731, 0.002186, 0.000515])
@@ -48,15 +49,24 @@ class A1Robot(a1.A1):
     
     # Send an initial zero command in order to receive state information.
     if mode_type == "high":
+       magic_host(local_port=8001, 
+               local_ip="192.168.123.24", 
+               target_port=8081, 
+               target_ip="192.168.123.161", 
+               message=b"high")
        self._robot_interface = robot_interface.RobotInterface(0x00, np.uint16(8090), np.uint16(8082))
        self._raw_state = robot_interface.HighState()
        
     else:
+      magic_host(local_port=8001, 
+               local_ip="192.168.123.24", 
+               target_port=8081, 
+               target_ip="192.168.123.161", 
+               message=b"low")
       self._robot_interface = robot_interface.RobotInterface()
       self._raw_state = robot_interface.LowState()
     
     self._mode_type = mode_type
-    self._online = True
     #if not self._check_connection():
     #  raise ConnectionError("Cannot connect to A1, aborting!")
     self._state_estimator = a1_robot_state_estimator.A1RobotStateEstimator(
@@ -71,16 +81,12 @@ class A1Robot(a1.A1):
                      mpc_body_mass, mpc_body_inertia)
 
 
-  def __del__(self):
-    print("Deleted current A1 node!")
-    if self._online:
-      self._online = False
-      self._delete_robot_interface()
+  # def __del__(self):
+  #   print("Deleted current A1 node!")
+  #   self._delete_robot_interface()  
 
-  def _delete_robot_interface(self):
-    if self._online:
-      self._online = False
-      del self._robot_interface
+  def delete_robot_interface(self):
+    self._robot_interface.delete_robot_interface()
       
 
   def _check_connection(self):

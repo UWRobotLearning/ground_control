@@ -20,6 +20,9 @@ public:
 												means 10%~100% power limit. If you are new, then use 1; if you are familiar, 
 												then can try bigger number or even comment this function. */
 	void PositionProtect(LowCmd&, LowState&, double limit = 0.087);  // default limit is 5 degree
+	void KillSafety(){
+		this->~Safety();
+	}
 private:
 	int WattLimit, Wcount;     // Watt. When limit to 100, you can triger it with 4 hands shaking.
 	double Hip_max, Hip_min, Thigh_max, Thigh_min, Calf_max, Calf_min;

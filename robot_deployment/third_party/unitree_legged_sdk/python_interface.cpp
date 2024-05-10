@@ -7,6 +7,7 @@ Use of this source code is governed by the MPL-2.0 license, see LICENSE.
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <memory>
 #include <array>  
 #include "unitree_legged_sdk/unitree_legged_sdk.h"
 
@@ -19,6 +20,7 @@ class RobotInterface {
  public:
   RobotInterface(uint8_t level): safe(LeggedType::A1), low_udp(LOWLEVEL), high_udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
         high_udp.InitCmdData(high_cmd);
+        low_udp.InitCmdData(low_cmd);
         cout << " High level" << endl;
   };
 
@@ -44,6 +46,7 @@ class RobotInterface {
   HighCmd high_cmd = {0};
 
   ~RobotInterface(){
+
     cout << "Destroyed Robot Interface!" <<endl;
   }
 
@@ -104,7 +107,6 @@ void RobotInterface::SendHighCommand(float forwardSpeed, float sideSpeed, float 
 class RobotInterface {
  public:
   RobotInterface(uint8_t level, uint16_t localPort, uint16_t targetPort): safe(LeggedType::A1), udp(localPort, "192.168.123.161", targetPort, sizeof(HighCmd), sizeof(HighState)){
-        udp.SwitchLevel(HIGHLEVEL);
         udp.InitCmdData(high_cmd);
         cout << " High level" << endl;
   }; 
@@ -119,7 +121,6 @@ class RobotInterface {
       // cout<<"Udp state  : "<<udp.udpState;
       // cout<< "accessibility : "<< udp.accessible;
       // cout <<"**********************"<<endl;
-      udp.SwitchLevel(LOWLEVEL);
       udp.InitCmdData(low_cmd);
   };
 
@@ -144,6 +145,10 @@ class RobotInterface {
 
   void DestroyRobotInterface(){
     this->~RobotInterface();
+  }
+
+  void DestroyUdp(){
+    udp.
   }
 
 };
@@ -341,7 +346,7 @@ PYBIND11_MODULE(robot_interface, m) {
   py::class_<RobotInterface>(m, "RobotInterface")
       .def(py::init<uint8_t, uint16_t, uint16_t>())
       .def(py::init<>())
-      .def("delete_robot_interface", &RobotInterface::DestroyRobotInterface)
+      .def("delete_robot_interface", &RobotInterface::~RobotInterface)
       .def("receive_low_observation", &RobotInterface::ReceiveLowObservation)
       .def("send_low_command", &RobotInterface::SendLowCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)

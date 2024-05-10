@@ -17,10 +17,15 @@ from configs.overrides.locomotion_task import LocomotionTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs.a1 import A1
+from legged_gym.envs.a1_recovery_short import A1RecoveryShort
 from rsl_rl.runners import OnPolicyRunner
 from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, 
                                       save_config_as_yaml, from_repo_root)
+
+
+
+
+ENV = A1RecoveryShort
 
 @dataclass
 class TrainScriptConfig:
@@ -83,7 +88,7 @@ def main(cfg: TrainScriptConfig) -> None:
 
     log.info("3. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
-    env: A1 = hydra.utils.instantiate(cfg.task)
+    env: ENV = hydra.utils.instantiate(cfg.task)
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
     if cfg.train.runner.resume_root != "":
