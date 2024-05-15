@@ -39,6 +39,13 @@ def save_config_as_yaml(cfg):
     with open(f"{cfg.train.log_dir}/resolved_config.yaml", "w") as config_file:
         OmegaConf.save(cfg, config_file, resolve=True)
 
+# Saves the current config file as yaml. Checks cfg.train.log_dir for the folder to save,
+# and saves it in that folder under the name resolved_config.yaml, trying to resolve all
+# the interpolations (indirect references in the config).
+def save_config_as_yaml_continual(cfg):
+    with open(f"{cfg.pretrain_train.log_dir}/resolved_config.yaml", "w") as config_file:
+        OmegaConf.save(cfg, config_file, resolve=True)
+
 # Saves the current config file (assumed to be already resolved) as pickle (with the extension .pkl). 
 # Checks cfg.train.log_dir for the folder to save, and saves it in that folder under the name resolved_config.pkl.
 def save_resolved_config_as_pkl(cfg):

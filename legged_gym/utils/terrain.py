@@ -328,19 +328,19 @@ class Terrain:
         elif terrain_type == "rough":
             terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
         elif terrain_type == "smooth_down_slope":
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=3.)
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=1.0)#platform_size=3.)
         elif terrain_type == "smooth_up_slope":
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=1.0)#platform_size=3.)
         elif terrain_type == "rough_down_slope":
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=3.)
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=-slope, platform_size=1.0)#platform_size=3.)
             terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
         elif terrain_type == "rough_up_slope":
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=1.0)#platform_size=3.)
             terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
         elif terrain_type == "stairs_up":
-            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_height, platform_size=3.)
+            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_height, platform_size=1.0)#platform_size=3.)
         elif terrain_type == "stairs_down":
-            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-step_height, platform_size=3.)
+            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-step_height, platform_size=1.0)#platform_size=3.)
         elif terrain_type == "discrete":
             num_rectangles = 20
             rectangle_min_size = 1.

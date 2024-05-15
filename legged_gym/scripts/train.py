@@ -39,8 +39,8 @@ class TrainScriptConfig:
     torch_deterministic: bool = False
     num_envs: int = 4096 
     iterations: int = 5000 
-    sim_device: str = "cuda:0"
-    rl_device: str = "cuda:0"
+    sim_device: str = "cuda:1"
+    rl_device: str = "cuda:1"
     headless: bool = False
     checkpoint_root: str = ""
     logging_root: str = from_repo_root("../experiment_logs")

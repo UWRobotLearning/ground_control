@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfig, DomainRandConfig,
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
                                  RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig, NormalizationConfig)
-from configs.overrides.terrain import FlatTerrainConfig, TrimeshTerrainConfig, RoughFlatConfig
+from configs.overrides.terrain import FlatTerrainConfig, TrimeshTerrainConfig, RoughFlatConfig, SmoothUpslopeConfig, RoughDownslopeConfig, StairsUpConfig, StairsDownConfig, DiscreteConfig, RoughFlatHardConfig
 from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig, MoveFwdRewardsConfig
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
@@ -463,11 +463,408 @@ class MoveFwdTaskConfig(TaskConfig):
     )
 
 
+@dataclass
+class PretrainLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = TrimeshTerrainConfig()#FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=("terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat", "yaw_rate", "z_pos")
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class AdaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=(),
+        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos")
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class AugmentedAdaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "base_quat", "yaw_rate", "friction", "base_mass", "z_pos"),
+        critic_privileged_sensors=(),
+        extra_sensors=("terrain_height",)
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    
+@dataclass
+class DownhillAugmentedAdaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = RoughDownslopeConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "base_quat", "yaw_rate", "friction", "base_mass", "z_pos"),
+        critic_privileged_sensors=(),
+        extra_sensors=("terrain_height",)
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
 
 
 
 
+@dataclass
+class PreadaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
 
+@dataclass
+class RoughFwdLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = RoughFlatConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+
+@dataclass
+class RoughHardFwdLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = RoughFlatHardConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class SmoothUpslopeLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = SmoothUpslopeConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class RoughDownslopeLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = RoughDownslopeConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class StairsDownLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = StairsDownConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class StairsUpLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = StairsUpConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+@dataclass
+class DiscreteLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = DiscreteConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()  ## It's important that this matches adapt config rewards
+    observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+        sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate"),
+        critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat",)
+    )
+    domain_rand: DomainRandConfig = DomainRandConfig(
+        friction_range=(0.4, 2.5),
+        added_mass_range=(-1.5, 2.5),
+        randomize_base_mass=True,
+    )
+    commands: CommandsConfig = CommandsConfig(
+        ranges=CommandsConfig.CommandRangesConfig(
+            lin_vel_x=(-1.,2.5),
+        ),
+        use_fixed_commands=True,
+        fixed_commands=CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.0,
+            ang_vel_yaw=0.0,
+            heading=0.0
+        ),
+        heading_command=False
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+
+
+# @dataclass
+# class AdaptLocomotionTaskConfig(TaskConfig):
+#     _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+#     env: EnvConfig = EnvConfig(
+#         num_envs=1
+#     )
+#     terrain: TerrainConfig = SmoothUpslopeConfig()
+#     rewards: RewardsConfig = LeggedGymRewardsConfig() #WITPLeggedGymRewardsConfig()
+#     observation: ObservationConfig = ObservationConfig(  ## It's important that this contains adapt config observations
+#         sensors=("projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "yaw_rate", "base_lin_vel", "base_ang_vel", "base_quat"),
+#         critic_privileged_sensors=(),
+#         extra_sensors=()
+#     )
+#     domain_rand: DomainRandConfig = DomainRandConfig(
+#         friction_range=(0.4, 2.5),
+#         added_mass_range=(-1.5, 2.5),
+#         randomize_base_mass=True,
+#     )
+#     commands: CommandsConfig = CommandsConfig(
+#         ranges=CommandsConfig.CommandRangesConfig(
+#             lin_vel_x=(-1.,2.5),
+#         ),
+#         use_fixed_commands=True,
+#         fixed_commands=CommandsConfig.FixedCommands(
+#             lin_vel_x=0.5,
+#             lin_vel_y=0.0,
+#             ang_vel_yaw=0.0,
+#             heading=0.0
+#         ),
+#         heading_command=False
+#     )
+#     init_state: InitStateConfig = InitStateConfig(
+#         pos=(0., 0., 0.32),
+#     )
+#     asset: AssetConfig = AssetConfig(
+#         self_collisions=False,
+#     )
 
 
 

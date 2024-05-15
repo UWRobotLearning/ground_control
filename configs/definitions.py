@@ -253,7 +253,8 @@ class ViewerConfig:
     debug_viz: bool = False
 
 # resolving functions
-OmegaConf.register_new_resolver("evaluate_max_gpu_contact_pairs", lambda num_envs: 2**23 if num_envs < 8000 else 2**24)
+# OmegaConf.register_new_resolver("evaluate_max_gpu_contact_pairs", lambda num_envs: 2**23 if num_envs < 8000 else 2**24)
+OmegaConf.register_new_resolver("evaluate_max_gpu_contact_pairs", lambda num_envs: 2**24 if num_envs < 8000 else 2**24)
 OmegaConf.register_new_resolver("evaluate_use_gpu", lambda device: device.startswith('cuda'))
 
 @dataclass
@@ -264,13 +265,13 @@ class SimConfig:
     substeps: int = 1
     gravity: Tuple[float, float, float] = (0., 0., -9.81) # [m/s^2]
     up_axis: int = 1 # 0 is y, 1 is z
-    use_gpu_pipeline: bool = "${evaluate_use_gpu: ${task.sim.device}}"
+    use_gpu_pipeline: bool = "${evaluate_use_gpu: ${oc.select: sim_device,cuda:0}}"
 
     @dataclass
     class PhysxConfig:
         num_threads: int = 10
         solver_type: int = 1 # 0: pdgs, 1: tgs
-        use_gpu: bool = "${evaluate_use_gpu: ${task.sim.device}}"
+        use_gpu: bool = "${evaluate_use_gpu: ${oc.select: sim_device,cuda:0}}"
         num_subscenes: int = 0
         num_position_iterations: int = 4
         num_velocity_iterations: int = 0
@@ -280,7 +281,7 @@ class SimConfig:
         max_depenetration_velocity: float = 1. # [m/s]
         default_buffer_size_multiplier: int = 5
         contact_collection: int = 2 # 0: never, 1: last substep, 2: all substeps
-        max_gpu_contact_pairs: int = "${evaluate_max_gpu_contact_pairs: ${task.env.num_envs}}"
+        max_gpu_contact_pairs: int = "${evaluate_max_gpu_contact_pairs: ${oc.select: num_envs, 4096}}"
     physx: PhysxConfig = PhysxConfig()
 
 
@@ -335,7 +336,7 @@ class AlgorithmConfig:
 @dataclass
 class RunnerConfig:
     num_steps_per_env: int = 24 # per iteration
-    iterations: int = "${oc.select: iterations,1500}" # number of policy updates
+    iterations: int = "${oc.select: iterations,2500}" # number of policy updates
 
     # logging
     save_interval: int = 50 # check for potential saves every this many iterations
@@ -388,3 +389,15 @@ class DeploymentConfig:
         fix_camera_yaw: bool = True
 
     render: RenderConfig = RenderConfig()
+
+@dataclass
+class CollectionConfig:
+    dataset_size: int = int(1e6)
+
+@dataclass
+class EvalConfig:
+    episode_buffer_len: int = 100
+    eval_episodes: int = 10
+    name: Optional[str] = None  ## For WandB logging purposes
+    project_name: str = "a1_continual_eval"  ## For WandB logging purposes
+    video_interval: int = 2

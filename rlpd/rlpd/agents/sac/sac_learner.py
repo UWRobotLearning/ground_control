@@ -66,6 +66,7 @@ class SACLearner(Agent):
         backup_entropy: bool = True,
         use_pnorm: bool = False,
         use_critic_resnet: bool = False,
+        gradient_clipping_norm: Optional[float] = None,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -84,12 +85,19 @@ class SACLearner(Agent):
         actor_base_cls = partial(
             MLP, hidden_dims=hidden_dims, activate_final=True, use_pnorm=use_pnorm
         )
-        actor_def = TanhNormal(actor_base_cls, action_dim)
+        actor_def = TanhNormal(actor_base_cls, action_dim, state_dependent_std=False)  ## TODO: Mateo: Need to change either this or IQL to have state_dependent_std = True
         actor_params = actor_def.init(actor_key, observations)["params"]
+        if gradient_clipping_norm:
+            actor_optim = optax.chain(
+                optax.clip_by_global_norm(gradient_clipping_norm),
+                optax.adam(learning_rate=actor_lr)
+            )
+        else:
+            actor_optim = optax.adam(learning_rate=actor_lr)
         actor = TrainState.create(
             apply_fn=actor_def.apply,
             params=actor_params,
-            tx=optax.adam(learning_rate=actor_lr),
+            tx=actor_optim,
         )
 
         if use_critic_resnet:
@@ -117,10 +125,17 @@ class SACLearner(Agent):
             )
         else:
             tx = optax.adam(learning_rate=critic_lr)
+        if gradient_clipping_norm:
+            critic_optim = optax.chain(
+                optax.clip_by_global_norm(gradient_clipping_norm),
+                tx
+            )
+        else:
+            critic_optim = tx
         critic = TrainState.create(
             apply_fn=critic_def.apply,
             params=critic_params,
-            tx=tx,
+            tx=critic_optim,
         )
         target_critic_def = Ensemble(critic_cls, num=num_min_qs or num_qs)
         target_critic = TrainState.create(
@@ -131,10 +146,17 @@ class SACLearner(Agent):
 
         temp_def = Temperature(init_temperature)
         temp_params = temp_def.init(temp_key)["params"]
+        if gradient_clipping_norm:
+            temp_optim = optax.chain(
+                optax.clip_by_global_norm(gradient_clipping_norm),
+                optax.adam(learning_rate=temp_lr)
+            )
+        else:
+            temp_optim = optax.adam(learning_rate=temp_lr)
         temp = TrainState.create(
             apply_fn=temp_def.apply,
             params=temp_params,
-            tx=optax.adam(learning_rate=temp_lr),
+            tx=temp_optim,
         )
 
         return cls(
@@ -150,6 +172,14 @@ class SACLearner(Agent):
             num_min_qs=num_min_qs,
             backup_entropy=backup_entropy,
         )
+
+    def initialize_pretrained_params(self, actor_params, critic_params):
+        new_agent = self
+        new_actor = self.actor.replace(params=actor_params)
+        new_critic = self.critic.replace(params=critic_params)
+        new_target_critic = self.target_critic.replace(params=critic_params)
+        new_agent = self.replace(actor=new_actor, critic=new_critic, target_critic=new_target_critic)
+        return new_agent
 
     def update_actor(self, batch: DatasetDict) -> Tuple[Agent, Dict[str, float]]:
         key, rng = jax.random.split(self.rng)
@@ -259,7 +289,6 @@ class SACLearner(Agent):
         for i in range(utd_ratio):
 
             def slice(x):
-                assert x.shape[0] % utd_ratio == 0
                 batch_size = x.shape[0] // utd_ratio
                 return x[batch_size * i : batch_size * (i + 1)]
 

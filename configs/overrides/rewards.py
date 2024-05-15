@@ -3,7 +3,7 @@ from configs.definitions import RewardsConfig
 
 @dataclass
 class LeggedGymRewardsConfig(RewardsConfig):
-    only_positive_rewards: bool = True
+    only_positive_rewards: bool = False#True
     soft_dof_pos_limit: float = 0.9
     scales: RewardsConfig.RewardScalesConfig = RewardsConfig.RewardScalesConfig(
         tracking_lin_vel=1.,
@@ -15,7 +15,8 @@ class LeggedGymRewardsConfig(RewardsConfig):
         feet_air_time=1.,
         collision=1.,
         action_change=0.15,
-        soft_dof_pos_limits=10.
+        soft_dof_pos_limits=10.,
+        termination=5
     )
 
 
