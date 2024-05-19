@@ -18,7 +18,7 @@ from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot
 from robot_deployment.robots.motors import MotorCommand
 from robot_deployment.robots.magic import _find_process_name
-import subprocess
+import socket
 import multiprocessing
 
 @dataclass
@@ -209,88 +209,39 @@ def initialize(mode_type : str, cfg, p):
 
 @hydra.main(version_base=None, config_name="config")
 def main(cfg: Config):
-  connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
-  p = bullet_client.BulletClient(connection_mode=connection_mode)
-  p.setAdditionalSearchPath(osp.join(LEGGED_GYM_ROOT_DIR, 'resources'))
-  p.loadURDF("plane.urdf")
-  p.setGravity(0.0, 0.0, -9.81)
-  
+    connection_mode = pybullet.DIRECT if cfg.deployment.use_real_robot else pybullet.GUI
+    p = bullet_client.BulletClient(connection_mode=connection_mode)
+    p.setAdditionalSearchPath(osp.join(LEGGED_GYM_ROOT_DIR, 'resources'))
+    p.loadURDF("plane.urdf")
+    p.setGravity(0.0, 0.0, -9.81)
+    
 
 
-  print("starting main.. \n\n")
+    print("starting main.. \n\n")
 
 
-  process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
-  process.start()
-  process.join()
+    process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
+    process.start()
+    process.join()
 
-  
-  process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
-  process.start()
-  process.join()
-
-
-  process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
-  process.start()
-  process.join()
-
-  # process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
-  # process.start()
-  # process.join()
-
-  # process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
-  # process.start()
-  # process.join()
-
-  # _find_process_name("python3")
+    
+    process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+    process.start()
+    process.join()
 
 
-  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-  # print(result.stdout)
+    process = multiprocessing.Process(target=initialize, args=("low", cfg, p))
+    process.start()
+    process.join()
 
+    process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+    process.start()
+    process.join()
 
+    process = multiprocessing.Process(target=initialize, args=("high", cfg, p))
+    process.start()
+    process.join()
 
-  # high_robot = a1_robot.A1Robot(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
-  # high_robot.delete_robot_interface()
-
-  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-  # print(result.stdout)
-
-  
-
-
-  # result = subprocess.run(['netstat', '-up'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-  # print(result.stdout)
-
-  # low_robot.delete_robot_interface()
-
-  # for _ in range(50):
-  #   action = get_action(robot, robot.time_since_reset)
-  #   robot.step(action)
-  #   if not cfg.deployment.use_real_robot:
-  #     time.sleep(cfg.deployment.timestep)
-  #   print(robot.base_orientation_rpy)
-  
-
-  # robot_ctor = a1_robot.A1Robot if cfg.deployment.use_real_robot else a1.A1
-  # high_robot = robot_ctor(pybullet_client=p, sim_conf=cfg.deployment, mode_type="high")
-  # high_robot.recover_robot()
-  
-
-
-  # time.sleep(1)
-  # print("recovered")
-  # high_robot.damping_mode()
-  
-  # low_robot.reset()
-
-  # time.sleep(1)
-  # print("recovered")
-  # high_robot.damping_mode()
-
-
-  # del robot
-  # restart(cfg)
 
 if __name__ == "__main__":
   main()

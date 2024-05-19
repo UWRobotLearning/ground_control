@@ -26,6 +26,13 @@ endif()
 
 set(CMAKE_CXX_FLAGS "-O3 -fPIC")
 
+# find_package(roscpp QUIET)
+# if(NOTroscpp_FOUND) 
+#   message(STATUS "Couldn't find roscpp, so not building ROS-specific functionality. Did you source the ROS setup.sh file?")
+# else()
+#   message(STATUS "Found roscpp installed at ${roscpp_DIR}, so building ROS-specific functionality.")
+# endif()
+
 find_package(catkin QUIET)
 if(${catkin_FOUND})
   catkin_package(
@@ -38,6 +45,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_subdirectory(pybind11)
 pybind11_add_module(robot_interface python_interface.cpp)
 target_link_libraries(robot_interface ${EXTRA_LIBS})
+
 
 
 # one pc one process

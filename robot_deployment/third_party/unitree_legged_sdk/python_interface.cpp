@@ -147,10 +147,6 @@ class RobotInterface {
     this->~RobotInterface();
   }
 
-  void DestroyUdp(){
-    udp.
-  }
-
 };
 
 LowState RobotInterface::ReceiveLowObservation() {
@@ -346,7 +342,7 @@ PYBIND11_MODULE(robot_interface, m) {
   py::class_<RobotInterface>(m, "RobotInterface")
       .def(py::init<uint8_t, uint16_t, uint16_t>())
       .def(py::init<>())
-      .def("delete_robot_interface", &RobotInterface::~RobotInterface)
+      .def("delete_robot_interface", &RobotInterface::DestroyRobotInterface)
       .def("receive_low_observation", &RobotInterface::ReceiveLowObservation)
       .def("send_low_command", &RobotInterface::SendLowCommand)
       .def("receive_high_observation", &RobotInterface::ReceiveHighObservation)
