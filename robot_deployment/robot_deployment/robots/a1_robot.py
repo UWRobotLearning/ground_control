@@ -7,6 +7,9 @@ from pybullet_utils.bullet_client import BulletClient
 from termcolor import colored
 
 from configs.definitions import DeploymentConfig
+from real import resetters
+from real.envs import env_builder
+
 from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot_state_estimator
 from robot_deployment.robots.motors import MotorControlMode
@@ -43,7 +46,8 @@ class A1Robot(a1.A1):
       mpc_body_mass: float = 110 / 9.8,
       mpc_body_inertia: Tuple[float] = np.array(
           (0.027, 0, 0, 0, 0.057, 0, 0, 0, 0.064)) * 5.,
-  mode_type = "low") -> None:
+          zero_action=np.asarray([0.05, 0.9, -1.8] * 4),
+      mode_type = "low") -> None:
     
     self._contact_force_threshold = np.zeros(4)
     
@@ -74,6 +78,11 @@ class A1Robot(a1.A1):
     self._last_reset_time = time.time()
     self._base_xy_position = np.zeros(2)
     self._sleep_time = 0.001
+
+    self.env = env_builder.build_imitation_env()
+    self.resetter = resetters.GetupResetter(self.env,
+                                                True,
+                                                standing_pose=zero_action)
 
     super().__init__(pybullet_client, sim_conf, urdf_path,
                      base_joint_names, foot_joint_names,
@@ -211,7 +220,7 @@ class A1Robot(a1.A1):
   def damping_mode(self) -> None:
       self._robot_interface.send_high_command(0., 0., 0., 0., 7)
 
-  def   recovery_stand(self) -> None:
+  def recovery_stand(self) -> None:
       self._robot_interface.send_high_command(0., 0., 0., 0., 8)
   
   def recover_robot(self) -> None:
@@ -220,6 +229,20 @@ class A1Robot(a1.A1):
     time.sleep(1)
     self.recovery_stand()
 
+  def _reset_var(self):
+    self.prev_action = np.zeros_like(self.action_space.low)
+    self.prev_qpos = None
+    self._last_timestamp = time.time()
+    self._prev_pose = None
+
+  def righting(self) -> None:
+    self.env._robot.SetMotorGains(kp=self.original_kps,
+                                      kd=self.original_kds)
+    self.resetter()
+    self.env._robot.SetMotorGains(kp=[60.0] * 12, kd=[4.0] * 12)
+    self._reset_var()
+
+    return self.observation()
   @property
   def sim_conf(self):
     return self._sim_conf

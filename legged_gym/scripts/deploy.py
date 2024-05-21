@@ -180,30 +180,33 @@ def main(cfg: DeployScriptConfig):
     all_infos = None
 
     log.info(f"7. Running the inference loop.")
-    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
-        # Form observation for policy.
-        obs = torch.tensor(obs, device=runner.device).float()
-        if t == 0:
-            obs_buf.reset([0], obs)
-            all_infos = {k: [v.copy()] for k, v in info.items()}
-        else:
-            obs_buf.insert(obs)
-            for k, v in info.items():
-                all_infos[k].append(v.copy())
+    while(True):
+        
+        for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
+            # Form observation for policy.
+            obs = torch.tensor(obs, device=runner.device).float()
+            if t == 0:
+                obs_buf.reset([0], obs)
+                all_infos = {k: [v.copy()] for k, v in info.items()}
+            else:
+                obs_buf.insert(obs)
+                for k, v in info.items():
+                    all_infos[k].append(v.copy())
 
-        policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
+            policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
 
-        # Evaluate policy and act.
-        actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-        actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
-        all_actions.append(actions)
-        obs, _, terminated, _, info = deploy_env.step(actions)
-        client_socket.sendall(str(obs).encode())
-        if terminated:
-            log.warning("Unsafe, terminating!")
-            # deploy_env.recover()
-            #Need to check WITP here
-            break
+            # Evaluate policy and act.
+            actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
+            actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
+            all_actions.append(actions)
+            obs, _, terminated, _, info = deploy_env.step(actions)
+            client_socket.sendall(str(obs).encode())
+            if terminated:
+                log.warning("Unsafe, terminating!")
+                # deploy_env.recover()
+                #Need to check WITP here
+                deploy_env.walk_in_the_park_recover()
+                break
 
     log.info("8. Exit Cleanly")
     isaac_env.exit()

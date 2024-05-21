@@ -62,6 +62,7 @@ class LocomotionGymEnv(gym.Env):
             pybullet_client=self.pybullet_client,
             sim_conf=self.config,
             motor_control_mode=MotorControlMode.POSITION
+            
         )
 
         if self.config.render.show_gui and not self.use_real_robot:
@@ -122,6 +123,7 @@ class LocomotionGymEnv(gym.Env):
         self.timesteps += 1
         return self.get_observation(), 0, terminated, False, self.get_full_observation()
 
+    # Default A1 recovery policy
     def recover(self):
         #destruct robot  
         self.robot._delete_robot_interface()
@@ -152,6 +154,9 @@ class LocomotionGymEnv(gym.Env):
         #destruct robot
         self.robot._delete_robot_interface()
 
+    # Walk in the park recovery policy
+    def walk_in_the_park_recover(self):
+        self.robot.righting()
 
     def render(self):
         view_matrix = self.pybullet_client.computeViewMatrixFromYawPitchRoll(
