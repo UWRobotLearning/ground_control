@@ -25,17 +25,17 @@ from rsl_rl.runners import OnPolicyRunner
 from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
 import torch
 
-#observations
-obs = ''
+# #observations
+# obs = ''
 
 
-#send
-def send_observations(sock):
-    global obs
-    try:
-        sock.sendall(str(obs).encode())
-    except socket.error as e:
-        print("Unable to send msg to docker socket") 
+# #send
+# def send_observations(sock):
+#     global obs
+#     try:
+#         sock.sendall(str(obs).encode())
+#     except socket.error as e:
+#         print("Unable to send msg to docker socket") 
 
 
 OmegaConf.register_new_resolver("not", lambda b: not b)
@@ -158,9 +158,10 @@ def main(cfg: DeployScriptConfig):
     # create robot environment (either in PyBullet or real world)
     
     # create obs 
-    send_thread = threading.Thread(target=send_observations, args=(client_socket))
-    send_thread.start()
+    # send_thread = threading.Thread(target=send_observations, args=(client_socket))
+    # send_thread.start()
 
+    # Start loop while true loop from here for running default A1 recovery policy.
     # while(True):
         
     deploy_env = LocomotionGymEnv(
@@ -200,12 +201,13 @@ def main(cfg: DeployScriptConfig):
             actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
             all_actions.append(actions)
             obs, _, terminated, _, info = deploy_env.step(actions)
+            print(len(obs))
             client_socket.sendall(str(obs).encode())
             if terminated:
                 log.warning("Unsafe, terminating!")
                 # deploy_env.recover()
                 #Need to check WITP here
-                deploy_env.walk_in_the_park_recover()
+                # deploy_env.walk_in_the_park_recover()
                 break
 
     log.info("8. Exit Cleanly")

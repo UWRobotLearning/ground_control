@@ -13,6 +13,7 @@ from pybullet_utils import bullet_client
 import time
 from typing import Tuple
 from legged_gym import LEGGED_GYM_ROOT_DIR
+
 from configs.definitions import DeploymentConfig
 from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot
@@ -204,7 +205,10 @@ def initialize(mode_type : str, cfg, p):
        robot.recover_robot()
        time.sleep(2)
        robot.damping_mode()
-       
+
+
+
+ 
   
 
 @hydra.main(version_base=None, config_name="config")

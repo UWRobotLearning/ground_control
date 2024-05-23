@@ -5,7 +5,6 @@ import time
 from typing import Tuple
 from pybullet_utils.bullet_client import BulletClient
 from termcolor import colored
-
 from configs.definitions import DeploymentConfig
 from real import resetters
 from real.envs import env_builder

@@ -35,6 +35,9 @@ def main(args: argparse.Namespace):
     print("3: Installing 'ground_control' (this project)...")
     local_pip_install('ground_control', project_root, reinstall=True)
 
+    print("3: Installing 'real' (this project)...")
+    local_pip_install('real', project_root, reinstall=True)
+
     # Finish the script successfully if deployment setup is not enabled.
     if not args.deploy:
         print("Successfully finished (without deployment setup)!")

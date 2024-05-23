@@ -39,13 +39,22 @@ setup(
 					'torch',
 					'torchvision',
 					'torchaudio',
-					'pydantic',
+					'pydantic==2.7.1',
 					'gitpython',
 					'wandb',
 					'moviepy',
 					'imageio',
+					"attrs",
+					"filterpy",
+					"dm_control",
+				    "dmcgym @ git+https://github.com/ikostrikov/dmcgym",
+					"tensorflow",
+					"gym",
+					"flax",
+					"tensorflow_probability",
+					"jax[cuda]",
 					],
 		extras_require={
-			"deploy": ['robot_deployment']  #local_dep('robot_deployment')]  # needs to be installed manually
+			"deploy": ['robot_deployment', 'real']  #local_dep('robot_deployment')]  # needs to be installed manually
 		}
 )
