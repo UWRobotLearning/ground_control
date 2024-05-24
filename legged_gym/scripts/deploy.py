@@ -7,10 +7,10 @@ import time
 
 from dataclasses import dataclass
 import hydra
-from hydra.core.config_store import ConfigStore
-from omegaconf import OmegaConf, MISSING
 from pydantic import TypeAdapter
-
+from hydra.core.config_store import ConfigStore
+from omegaconf import OmegaConf, MISSING    
+import pdb
 from configs.hydra import ExperimentHydraConfig
 from configs.definitions import (EnvConfig, TaskConfig, TrainConfig, ObservationConfig,
                                  SimConfig, RunnerConfig, TerrainConfig)
@@ -122,6 +122,7 @@ def main(cfg: DeployScriptConfig):
     log.info("2. Merging loaded config, defaults and current top-level config.")
     del(loaded_cfg.hydra) # Remove unpopulated hydra configuration key from dictionary
     default_cfg = {"task": TaskConfig(), "train": TrainConfig()}  # default behaviour as defined in "configs/definitions.py"
+    
     merged_cfg = OmegaConf.merge(
         default_cfg,  # loads default values at the end if it's not specified anywhere else
         loaded_cfg,   # loads values from the previous experiment if not specified in the top-level config
@@ -132,6 +133,7 @@ def main(cfg: DeployScriptConfig):
     merged_cfg_dict = OmegaConf.to_container(merged_cfg, resolve=True)
     # Creates a new DeployScriptConfig object (with type-checking and optional validation) using Pydantic.
     # The merged config file (DictConfig as given by OmegaConf) has to be recursively turned to a dict for Pydantic to use it.
+    # Commented out pydantic 
     cfg = TypeAdapter(DeployScriptConfig).validate_python(merged_cfg_dict)
     # Alternatively, you should be able to use "from pydantic.dataclasses import dataclass" and replace the above line with
     # cfg = PlayScriptConfig(**merged_cfg_dict)
@@ -201,8 +203,7 @@ def main(cfg: DeployScriptConfig):
             actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
             all_actions.append(actions)
             obs, _, terminated, _, info = deploy_env.step(actions)
-            print(len(obs))
-            client_socket.sendall(str(obs).encode())
+            client_socket.sendall(obs.tobytes())
             if terminated:
                 log.warning("Unsafe, terminating!")
                 # deploy_env.recover()
