@@ -1,6 +1,7 @@
-/*****************************************************************
- Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
-******************************************************************/
+/************************************************************************
+Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
+Use of this source code is governed by the MPL-2.0 license, see LICENSE.
+************************************************************************/
 
 #include "unitree_legged_sdk/unitree_legged_sdk.h"
 #include <math.h>
@@ -9,12 +10,11 @@
 #include <string.h>
 
 using namespace UNITREE_LEGGED_SDK;
-using namespace std;
 
 class Custom
 {
 public:
-    Custom(uint8_t level): safe(LeggedType::A1), udp(8090, "192.168.123.161", 8082, sizeof(HighCmd), sizeof(HighState)){
+    Custom(uint8_t level): safe(LeggedType::A1), udp(level){
         udp.InitCmdData(cmd);
     }
     void UDPRecv();
@@ -44,90 +44,73 @@ void Custom::RobotControl()
 {
     motiontime += 2;
     udp.GetRecv(state);
+    // printf("%d   %f\n", motiontime, state.forwardSpeed);
 
-    // printf("%f %f %f %f %f\n", state.imu.rpy[1], state.imu.rpy[2], state.position[0], state.position[1], state.velocity[0]);
-    // printf("%f %f %f\n", state.motorState[3].q, state.motorState[4].q, state.motorState[5].q);
+    cmd.forwardSpeed = 0.0f;
+    cmd.sideSpeed = 0.0f;
+    cmd.rotateSpeed = 0.0f;
+    cmd.bodyHeight = 0.0f;
 
     cmd.mode = 0;      // 0:idle, default stand      1:forced stand     2:walk continuously
-    cmd.gaitType = 0;
-    cmd.speedLevel = 0;
-    cmd.footRaiseHeight = 0;
-    cmd.bodyHeight = 0;
+    cmd.roll  = 0;
+    cmd.pitch = 0;
+    cmd.yaw = 0;
 
-    cmd.euler[0]  = 0;
-    cmd.euler[1] = 0;
-    cmd.euler[2] = 0;
-    cmd.velocity[0] = 0.0f;
-    cmd.velocity[1] = 0.0f;
-    cmd.yawSpeed = 0.0f;
+    if(motiontime>1000 && motiontime<1500){
+        cmd.mode = 1;
+        cmd.roll = 0.5f;
+    }
 
+    if(motiontime>1500 && motiontime<2000){
+        cmd.mode = 1;
+        cmd.pitch = 0.3f;
+    }
 
-    if(motiontime > 0 && motiontime < 1000){
+    if(motiontime>2000 && motiontime<2500){
         cmd.mode = 1;
-        cmd.euler[0] = -0.3;
+        cmd.yaw = 0.3f;
     }
-    if(motiontime > 1000 && motiontime < 2000){
+
+    if(motiontime>2500 && motiontime<3000){
         cmd.mode = 1;
-        cmd.euler[0] = 0.3;
+        cmd.bodyHeight = -0.3f;
     }
-    if(motiontime > 2000 && motiontime < 3000){
+
+    if(motiontime>3000 && motiontime<3500){
         cmd.mode = 1;
-        cmd.euler[1] = -0.2;
+        cmd.bodyHeight = 0.3f;
     }
-    if(motiontime > 3000 && motiontime < 4000){
+
+    if(motiontime>3500 && motiontime<4000){
         cmd.mode = 1;
-        cmd.euler[1] = 0.2;
+        cmd.bodyHeight = 0.0f;
     }
-    if(motiontime > 4000 && motiontime < 5000){
-        cmd.mode = 1;
-        cmd.euler[2] = -0.2;
-    }
-    if(motiontime > 5000 && motiontime < 6000){
-        cmd.mode = 1;
-        cmd.euler[2] = 0.2;
-    }
-    if(motiontime > 6000 && motiontime < 7000){
-        cmd.mode = 1;
-        cmd.bodyHeight = -0.2;
-    }
-    if(motiontime > 7000 && motiontime < 8000){
-        cmd.mode = 1;
-        cmd.bodyHeight = 0.1;
-    }
-    if(motiontime > 8000 && motiontime < 9000){
-        cmd.mode = 1;
-        cmd.bodyHeight = 0.0;
-    }
-    if(motiontime > 9000 && motiontime < 11000){
-        cmd.mode = 5;
-    }
-    if(motiontime > 11000 && motiontime < 13000){
-        cmd.mode = 6;
-    }
-    if(motiontime > 13000 && motiontime < 14000){
-        cmd.mode = 0;
-    }
-    if(motiontime > 14000 && motiontime < 18000){
+
+    if(motiontime>4000 && motiontime<5000){
         cmd.mode = 2;
-        cmd.gaitType = 2;
-        cmd.velocity[0] = 0.4f; // -1  ~ +1
-        cmd.yawSpeed = 2;
-        cmd.footRaiseHeight = 0.1;
-        // printf("walk\n");
-    }
-    if(motiontime > 18000 && motiontime < 20000){
-        cmd.mode = 0;
-        cmd.velocity[0] = 0;
-    }
-    if(motiontime > 20000 && motiontime < 24000){
-        cmd.mode = 2;
-        cmd.gaitType = 1;
-        cmd.velocity[0] = 0.2f; // -1  ~ +1
-        cmd.bodyHeight = 0.1;
-        // printf("walk\n");
     }
 
-    if(motiontime>24000 ){
+    if(motiontime>5000 && motiontime<8500){
+        cmd.mode = 2;
+        cmd.forwardSpeed = 0.1f; // -1  ~ +1
+    }
+
+    if(motiontime>8500 && motiontime<12000){
+        cmd.mode = 2;
+        cmd.forwardSpeed = -0.2f; // -1  ~ +1
+    }
+
+    if(motiontime>12000 && motiontime<16000){
+        cmd.mode = 2;
+        cmd.rotateSpeed = 0.3f;   // turn
+    }
+
+    if(motiontime>16000 && motiontime<20000){
+        cmd.mode = 2;
+        cmd.rotateSpeed = -0.3f;   // turn
+    }
+
+    if(motiontime>20000 ){
         cmd.mode = 1;
     }
 
@@ -142,7 +125,7 @@ int main(void)
     std::cin.ignore();
 
     Custom custom(HIGHLEVEL);
-    // InitEnvironment();
+    InitEnvironment();
     LoopFunc loop_control("control_loop", custom.dt,    boost::bind(&Custom::RobotControl, &custom));
     LoopFunc loop_udpSend("udp_send",     custom.dt, 3, boost::bind(&Custom::UDPSend,      &custom));
     LoopFunc loop_udpRecv("udp_recv",     custom.dt, 3, boost::bind(&Custom::UDPRecv,      &custom));

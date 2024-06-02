@@ -1,6 +1,7 @@
-/*****************************************************************
- Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
-******************************************************************/
+/************************************************************************
+Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
+Use of this source code is governed by the MPL-2.0 license, see LICENSE.
+************************************************************************/
 
 #ifndef _UNITREE_LEGGED_A1_H_
 #define _UNITREE_LEGGED_A1_H_

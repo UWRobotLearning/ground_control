@@ -1,6 +1,7 @@
-/*****************************************************************
- Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
-******************************************************************/
+/************************************************************************
+Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
+Use of this source code is governed by the MPL-2.0 license, see LICENSE.
+************************************************************************/
 
 #ifndef _UNITREE_LEGGED_COMM_H_
 #define _UNITREE_LEGGED_COMM_H_
@@ -8,12 +9,11 @@
 #include <stdint.h>
 #include <array>
 
-namespace UNITREE_LEGGED_SDK 
+namespace UNITREE_LEGGED_SDK
 {
 
 	constexpr int HIGHLEVEL = 0x00;
 	constexpr int LOWLEVEL  = 0xff;
-	constexpr int BACKFLIPLEVEL  = 0xf0;
 	constexpr double PosStopF = (2.146E+9f);
 	constexpr double VelStopF = (16000.0f);
 
@@ -29,8 +29,8 @@ namespace UNITREE_LEGGED_SDK
 	typedef struct
 	{
 		std::array<float, 4> quaternion;               // quaternion, normalized, (w,x,y,z)
-		std::array<float, 3> gyroscope;                // angular velocity （unit: rad/s)    (raw data)
-		std::array<float, 3> accelerometer;            // m/(s2)                             (raw data)
+		std::array<float, 3> gyroscope;                // angular velocity （unit: rad/s)
+		std::array<float, 3> accelerometer;            // m/(s2)
 		std::array<float, 3> rpy;                      // euler angle（unit: rad)
 		int8_t temperature;
 	} IMU;                                 // when under accelerated motion, the attitude of the robot calculated by IMU will drift.
@@ -44,7 +44,7 @@ namespace UNITREE_LEGGED_SDK
 
 	typedef struct
 	{
-		uint8_t mode;                      // motor working mode 
+		uint8_t mode;                      // motor working mode
 		float q;                           // current angle (unit: radian)
 		float dq;                          // current velocity (unit: radian/second)
 		float ddq;                         // current acc (unit: radian/second*second)
@@ -59,7 +59,7 @@ namespace UNITREE_LEGGED_SDK
 	typedef struct
 	{
 		uint8_t mode;                      // desired working mode
-		float q;                           // desired angle (unit: radian) 
+		float q;                           // desired angle (unit: radian)
 		float dq;                          // desired velocity (unit: radian/second)
 		float tau;                         // desired output torque (unit: N.m)
 		float Kp;                          // desired position stiffness (unit: N.m/rad )
@@ -72,11 +72,11 @@ namespace UNITREE_LEGGED_SDK
 		uint8_t levelFlag;                 // flag to distinguish high level or low level
 		uint16_t commVersion;
 		uint16_t robotID;
-		uint32_t SN; 
+		uint32_t SN;
 		uint8_t bandWidth;
 		IMU imu;
 		std::array<MotorState, 20> motorState;
-		std::array<int16_t, 4> footForce;             // force sensors
+		std::array<int16_t, 4> footForce;              // force sensors
 		std::array<int16_t, 4> footForceEst;           // force sensors
 		uint32_t tick;                     // reference real-time from motion controller (unit: us)
 		std::array<uint8_t, 40> wirelessRemote;        // wireless commands
@@ -84,7 +84,7 @@ namespace UNITREE_LEGGED_SDK
 		uint32_t crc;
 	} LowState;                            // low level feedback
 
-	typedef struct 
+	typedef struct
 	{
 		uint8_t levelFlag;
 		uint16_t commVersion;
@@ -105,20 +105,20 @@ namespace UNITREE_LEGGED_SDK
 		uint16_t robotID;
 		uint32_t SN;
 		uint8_t bandWidth;
-		IMU imu;
-		std::array<MotorState, 20> motorState;
-		std::array<int16_t, 4> footForce;  
-		std::array<int16_t, 4> footForceEst;
 		uint8_t mode;
-		float progress;
-		uint8_t gaitType;                  // 0.idle  1.trot  2.trot running  3.climb stair  4.trot obstacle
-		float footRaiseHeight;             // (unit: m, default: 0.08m), foot up height while walking
-		std::array<float, 3> position;     // (unit: m), from own odometry in inertial frame, usually drift
-		float bodyHeight;                  // (unit: m, default: 0.28m),
-		std::array<float, 3> velocity;     // (unit: m/s), forwardSpeed, sideSpeed, rotateSpeed in body frame
-		float yawSpeed;                    // (unit: rad/s), rotateSpeed in body frame        
+		IMU imu;
+		float forwardSpeed;
+		float sideSpeed;
+		float rotateSpeed;
+		float bodyHeight;
+		float updownSpeed;                 // speed of stand up or squat down
+		float forwardPosition;             // front or rear displacement, an integrated number form kinematics function, usually drift
+		float sidePosition;                // left or right displacement, an integrated number form kinematics function, usually drift
 		std::array<Cartesian, 4> footPosition2Body;    // foot position relative to body
 		std::array<Cartesian, 4> footSpeed2Body;       // foot speed relative to body
+		std::array<int16_t, 4> footForce;
+		std::array<int16_t, 4> footForceEst;
+		uint32_t tick;                     // reference real-time from motion controller (unit: us)
 		std::array<uint8_t, 40> wirelessRemote;
 		uint32_t reserve;
 		uint32_t crc;
@@ -131,52 +131,37 @@ namespace UNITREE_LEGGED_SDK
 		uint16_t robotID;
 		uint32_t SN;
 		uint8_t bandWidth;
-		uint8_t mode;                       // 0. idle, default stand  1. force stand (controlled by dBodyHeight + ypr)
-											// 2. target velocity walking (controlled by velocity + yawSpeed)
-											// 3. target position walking (controlled by position + ypr[0])
-											// 4. path mode walking (reserve for future release)
-											// 5. position stand down. 
-											// 6. position stand up 
-											// 7. damping mode 
-											// 8. recovery stand
-											// 9. backflip
-											// 10. jumpYaw
-											// 11. straightHand
-											// 12. dance1
-											// 13. dance2
-
-		uint8_t gaitType;                  // 0.idle  1.trot  2.trot running  3.climb stair
-		uint8_t speedLevel;                // 0. default low speed. 1. medium speed 2. high speed. during walking, only respond MODE 3
-		float footRaiseHeight;             // (unit: m, default: 0.08m), foot up height while walking
-		float bodyHeight;                  // (unit: m, default: 0.28m),
-		std::array<float, 2> position;     // (unit: m), desired position in inertial frame
-		std::array<float, 3> euler;        // (unit: rad), roll pitch yaw in stand mode
-		std::array<float, 2> velocity;     // (unit: m/s), forwardSpeed, sideSpeed in body frame
-		float yawSpeed;                    // (unit: rad/s), rotateSpeed in body frame
+		uint8_t mode;                      // 0:idle, default stand      1:forced stand     2:walk continuously
+		float forwardSpeed;                // speed of move forward or backward, scale: -1~1
+		float sideSpeed;                   // speed of move left or right, scale: -1~1
+		float rotateSpeed;	               // speed of spin left or right, scale: -1~1
+		float bodyHeight;                  // body height, scale: -1~1
+		float footRaiseHeight;             // foot up height while walking (unavailable now)
+		float yaw;                         // unit: radian, scale: -1~1
+		float pitch;                       // unit: radian, scale: -1~1
+		float roll;                        // unit: radian, scale: -1~1
 		std::array<LED, 4> led;
 		std::array<uint8_t, 40> wirelessRemote;
+		std::array<uint8_t, 40> AppRemote;
 		uint32_t reserve;
 		uint32_t crc;
 	} HighCmd;                             // high level control
 
 #pragma pack()
 
-	typedef struct     
+	typedef struct
 	{
 		unsigned long long TotalCount;     // total loop count
 		unsigned long long SendCount;      // total send count
 		unsigned long long RecvCount;      // total receive count
-		unsigned long long SendError;      // total send error 
-		unsigned long long FlagError;      // total flag error 
-		unsigned long long RecvCRCError;   // total reveive CRC error	
-		unsigned long long RecvLoseError;  // total lose package count	
+		unsigned long long SendError;      // total send error
+		unsigned long long FlagError;      // total flag error
+		unsigned long long RecvCRCError;   // total reveive CRC error
+		unsigned long long RecvLoseError;  // total lose package count
 	} UDPState;                            // UDP communication state
 
 	constexpr int HIGH_CMD_LENGTH   = (sizeof(HighCmd));
 	constexpr int HIGH_STATE_LENGTH = (sizeof(HighState));
-    constexpr int LOW_CMD_LENGTH   = (sizeof(LowCmd));
-	constexpr int LOW_STATE_LENGTH = (sizeof(LowState));
-	
 
 }
 

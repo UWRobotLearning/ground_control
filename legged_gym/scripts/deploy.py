@@ -51,7 +51,7 @@ class DeployScriptConfig:
     episode_length_s: float = 200.
     checkpoint: int = -1
     device: str = "cpu"
-    use_real_robot: bool = False
+    use_real_robot: bool = True
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -106,13 +106,13 @@ cs.store(name="config", node=DeployScriptConfig)
 def main(cfg: DeployScriptConfig):
     global obs
     # Address and port of the service inside the Docker container
-    container_address = '172.17.0.1'
-    container_port = 9090  # service is listening on port 9090
-    # Create a socket
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # container_address = '172.17.0.1'
+    # container_port = 9090  # service is listening on port 9090
+    # # Create a socket
+    # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    #Connect to socket that is bound by the docker container
-    client_socket.connect((container_address, container_port))
+    # #Connect to socket that is bound by the docker container
+    # client_socket.connect((container_address, container_port))
 
     experiment_path = get_latest_experiment_path(cfg.checkpoint_root)
     latest_config_filepath = osp.join(experiment_path, "resolved_config.yaml")
@@ -183,33 +183,33 @@ def main(cfg: DeployScriptConfig):
     all_infos = None
 
     log.info(f"7. Running the inference loop.")
-    while(True):
+    # while(True):
         
-        for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
-            # Form observation for policy.
-            obs = torch.tensor(obs, device=runner.device).float()
-            if t == 0:
-                obs_buf.reset([0], obs)
-                all_infos = {k: [v.copy()] for k, v in info.items()}
-            else:
-                obs_buf.insert(obs)
-                for k, v in info.items():
-                    all_infos[k].append(v.copy())
+    for t in range(int(cfg.episode_length_s / deploy_env.robot.control_timestep)):
+        # Form observation for policy.
+        obs = torch.tensor(obs, device=runner.device).float()
+        if t == 0:
+            obs_buf.reset([0], obs)
+            all_infos = {k: [v.copy()] for k, v in info.items()}
+        else:
+            obs_buf.insert(obs)
+            for k, v in info.items():
+                all_infos[k].append(v.copy())
 
-            policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
+        policy_obs = obs_buf.get_obs_vec(range(task_cfg.observation.history_steps))
 
-            # Evaluate policy and act.
-            actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
-            actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
-            all_actions.append(actions)
-            obs, _, terminated, _, info = deploy_env.step(actions)
-            client_socket.sendall(obs.tobytes())
-            if terminated:
-                log.warning("Unsafe, terminating!")
-                # deploy_env.recover()
-                #Need to check WITP here
-                # deploy_env.walk_in_the_park_recover()
-                break
+        # Evaluate policy and act.
+        actions = policy(policy_obs.detach()).detach().cpu().numpy().squeeze()
+        actions = task_cfg.control.action_scale*actions + deploy_env.default_motor_angles
+        all_actions.append(actions)
+        obs, _, terminated, _, info = deploy_env.step(actions)
+        # client_socket.sendall(obs.tobytes())
+        if terminated:
+            log.warning("Unsafe, terminating!")
+            # deploy_env.recover()
+            #Need to check WITP here
+            deploy_env.walk_in_the_park_recover()
+            break
 
     log.info("8. Exit Cleanly")
     isaac_env.exit()

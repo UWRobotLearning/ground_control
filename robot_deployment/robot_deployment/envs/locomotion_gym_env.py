@@ -71,6 +71,7 @@ class LocomotionGymEnv(gym.Env):
         self.clock = lambda: self.robot.time_since_reset
         self.last_action: np.ndarray = None
         self.timesteps = None
+        
 
     def reset(self):
         if self.hard_reset:

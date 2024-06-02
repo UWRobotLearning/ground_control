@@ -8,6 +8,8 @@ from ground_control_ros.msg import ground_control
 
 
 
+
+
 if __name__ == "__main__":
     # ros node iniit
     rospy.init_node('ground_control_pub', anonymous=True)

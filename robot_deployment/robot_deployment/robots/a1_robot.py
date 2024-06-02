@@ -13,7 +13,7 @@ from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot_state_estimator
 from robot_deployment.robots.motors import MotorControlMode
 from robot_deployment.robots.motors import MotorCommand
-from robot_deployment.robots.magic import magic_host
+import pdb
 
 # Constants for analytical FK/IK
 COM_OFFSET = -np.array([0.012731, 0.002186, 0.000515])
@@ -45,39 +45,19 @@ class A1Robot(a1.A1):
       mpc_body_mass: float = 110 / 9.8,
       mpc_body_inertia: Tuple[float] = np.array(
           (0.027, 0, 0, 0, 0.057, 0, 0, 0, 0.064)) * 5.,
-          zero_action=np.asarray([0.05, 0.9, -1.8] * 4),
-      mode_type = "low") -> None:
-    
+  ) -> None:
+    self._raw_state = robot_interface.LowState()
     self._contact_force_threshold = np.zeros(4)
-    
     # Send an initial zero command in order to receive state information.
-    if mode_type == "high":
-       magic_host(local_port=8001, 
-               local_ip="192.168.123.24", 
-               target_port=8081, 
-               target_ip="192.168.123.161", 
-               message=b"high")
-       self._robot_interface = robot_interface.RobotInterface(0x00, np.uint16(8090), np.uint16(8082))
-       self._raw_state = robot_interface.HighState()
-       
-    else:
-      magic_host(local_port=8001, 
-               local_ip="192.168.123.24", 
-               target_port=8081, 
-               target_ip="192.168.123.161", 
-               message=b"low")
-      self._robot_interface = robot_interface.RobotInterface()
-      self._raw_state = robot_interface.LowState()
-    
-    self._mode_type = mode_type
+    self._robot_interface = robot_interface.RobotInterface(0xff)
     #if not self._check_connection():
     #  raise ConnectionError("Cannot connect to A1, aborting!")
     self._state_estimator = a1_robot_state_estimator.A1RobotStateEstimator(
         self)
-    self._last_reset_time = time.time()
+    self._last_reset_time  = time.time()
     self._base_xy_position = np.zeros(2)
     self._sleep_time = 0.001
-
+    pdb.set_trace()
     self.env = env_builder.build_imitation_env()
     self.resetter = resetters.GetupResetter(self.env,
                                                 True,
@@ -88,38 +68,21 @@ class A1Robot(a1.A1):
                      motor_control_mode, mpc_body_height,
                      mpc_body_mass, mpc_body_inertia)
 
-
-  # def __del__(self):
-  #   print("Deleted current A1 node!")
-  #   self._delete_robot_interface()  
-
-  def delete_robot_interface(self):
-    self._robot_interface.delete_robot_interface()
-      
-
   def _check_connection(self):
     """
     Returns true if there's a valid connection to the robot. In this case,
     we check that the roll-pitch-yaw measurment of the IMU is non-zero.
     """
-    self._receive_low_observation()
+    self._receive_observation()
     return np.all(self.base_orientation_rpy != 0.)
 
-  def _receive_low_observation(self) -> None:
-    """Receives low observation from robot and saves the state.
+  def _receive_observation(self) -> None:
+    """Receives observation from robot and saves the state.
 
-    Note that the returned state from robot's receive_low_observation() function
+    Note that the returned state from robot's receive_observation() function
     is mutable. So we need to copy the value out.
     """
-    self._raw_state = self._robot_interface.receive_low_observation()
-
-  def _receive_high_observation(self) -> None:
-    """Receives high observation from robot and saves the state.
-
-    Note that the returned state from robot's receive_low_observation() function
-    is mutable. So we need to copy the value out.
-    """
-    self._raw_state = self._robot_interface.receive_high_observation()
+    self._raw_state = self._robot_interface.receive_observation()
 
   def step(self,
            action: MotorCommand,
@@ -138,16 +101,16 @@ class A1Robot(a1.A1):
     # We repeatedly apply action to robot until we've reached
     # the control timestep.
     while time.time() - self.current_time < self.control_timestep:
-      self._apply_low_action(action, motor_control_mode)
+      self._apply_action(action, motor_control_mode)
       time.sleep(self._sleep_time)
-      self._receive_low_observation()
+      self._receive_observation()
       self._state_estimator.update(self._raw_state)
       self._base_xy_position += self.base_velocity[:2] * self._sleep_time # dead reckoning
       self._update_contact_history()
     self.current_time = time.time()
     self._check_motor_temperatures()
 
-  def _apply_low_action(self,
+  def _apply_action(self,
                     action: MotorCommand,
                     motor_control_mode: MotorControlMode = None) -> None:
     """Clips and then apply the motor commands using the motor model.
@@ -176,15 +139,15 @@ class A1Robot(a1.A1):
       raise ValueError('Unknown motor control mode for A1 robot: {}.'.format(
           motor_control_mode))
 
-    self._robot_interface.send_low_command(command)
+    self._robot_interface.send_command(command)
 
   def reset(self, hard_reset: bool = False, reset_time: float = 1.5):
     """Reset the robot to default motor angles."""
     super(A1Robot, self).reset(hard_reset, num_reset_steps=0)
     for _ in range(10):
-      self._robot_interface.send_low_command(np.zeros(60, dtype=np.float32))
+      self._robot_interface.send_command(np.zeros(60, dtype=np.float32))
       time.sleep(0.001)
-      self._receive_low_observation()
+      self._receive_observation()
 
     print("About to reset the robot.")
     initial_motor_position = self.motor_angles

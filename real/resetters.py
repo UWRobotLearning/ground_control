@@ -124,6 +124,9 @@ class GetupResetter(object):
         self._env.robot.HoldCurrentPose()
         print("finished standing")
 
+    """
+        Reset gets called.
+    """
     def __call__(self):
         self._env.robot.ReceiveObservation()
         enable_action_filter = self._env.robot._enable_action_filter

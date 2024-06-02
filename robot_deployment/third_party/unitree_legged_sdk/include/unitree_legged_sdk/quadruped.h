@@ -1,13 +1,10 @@
-/*****************************************************************
- Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
-******************************************************************/
+/************************************************************************
+Copyright (c) 2020, Unitree Robotics.Co.Ltd. All rights reserved.
+Use of this source code is governed by the MPL-2.0 license, see LICENSE.
+************************************************************************/
 
 #ifndef _UNITREE_LEGGED_QUADRUPED_H_
 #define _UNITREE_LEGGED_QUADRUPED_H_
-
-#include <string>
-
-using namespace std;
 
 namespace UNITREE_LEGGED_SDK 
 {
@@ -22,9 +19,7 @@ enum class HighLevelType {
 	Sport
 };
 
-// string VersionSDK();
-void InitEnvironment();
-
+void InitEnvironment();      // memory lock
 
 // definition of each leg and joint
 constexpr int FR_ = 0;       // leg index
