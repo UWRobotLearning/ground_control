@@ -78,10 +78,6 @@ class A1Robot(a1.A1):
     self._base_xy_position = np.zeros(2)
     self._sleep_time = 0.001
 
-    self.env = env_builder.build_imitation_env()
-    self.resetter = resetters.GetupResetter(self.env,
-                                                True,
-                                                standing_pose=zero_action)
 
     super().__init__(pybullet_client, sim_conf, urdf_path,
                      base_joint_names, foot_joint_names,

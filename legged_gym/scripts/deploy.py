@@ -21,6 +21,8 @@ from legged_gym.envs.a1 import A1
 from legged_gym.utils.observation_buffer import ObservationBuffer
 from legged_gym.utils.helpers import (export_policy_as_jit, get_load_path, get_latest_experiment_path,
                                       empty_cfg, from_repo_root, save_config_as_yaml)
+
+from real.envs.env_wrappers import reset_task
 from rsl_rl.runners import OnPolicyRunner
 from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
 import torch
@@ -206,9 +208,8 @@ def main(cfg: DeployScriptConfig):
         # client_socket.sendall(obs.tobytes())
         if terminated:
             log.warning("Unsafe, terminating!")
-            # deploy_env.recover()
             #Need to check WITP here
-            deploy_env.walk_in_the_park_recover()
+            deploy_env.recover()
             break
 
     log.info("8. Exit Cleanly")

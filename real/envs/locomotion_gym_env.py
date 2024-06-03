@@ -422,7 +422,7 @@ class LocomotionGymEnv(gym.Env):
     @world_dict.setter
     def world_dict(self, new_dict):
         self._world_dict = new_dict.copy()
-
+    
     def _termination(self):
         if not self._robot.is_safe:
             return True

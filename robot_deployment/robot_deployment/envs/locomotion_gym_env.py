@@ -13,6 +13,8 @@ from robot_deployment.robots.motors import MotorControlMode
 from robot_deployment.robots.motors import MotorCommand
 from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot
+from robot_deployment.robots import resetters,reset_task
+
 
 
 class LocomotionGymEnv(gym.Env):
@@ -45,10 +47,13 @@ class LocomotionGymEnv(gym.Env):
         self.default_motor_angles = self.robot.motor_group.init_positions
         self.observation_space = self._build_observation_space()
         self.action_space = self._build_action_space()
-
+        
         if self.get_commands_from_joystick:
             self.gamepad = Gamepad(self.command_ranges)
             self.commands = np.array([0., 0., 0.])
+
+        self.task = reset_task.ResetTask()
+        self.recover = resetters.GetupResetter(self, self.use_real_robot)
 
     def _setup_robot(self):
         # make the simulator instance
@@ -124,40 +129,6 @@ class LocomotionGymEnv(gym.Env):
         self.timesteps += 1
         return self.get_observation(), 0, terminated, False, self.get_full_observation()
 
-    # Default A1 recovery policy
-    def recover(self):
-        #destruct robot  
-        self.robot._delete_robot_interface()
-        time.sleep(0.4)
-
-        #construct robot to high mode
-        robot_ctor = a1_robot.A1Robot if self.use_real_robot else a1.A1
-        self.robot = robot_ctor(
-            pybullet_client=self.pybullet_client,
-            sim_conf=self.config,
-            motor_control_mode=MotorControlMode.POSITION,
-            mode_type="high"
-        )
-
-        #recover
-        self.robot.recover_robot()
-        
-        #####################
-        #TODO: Navigation
-        """
-        We can hard code it to go back, however, if we are 
-        receiving GPS waypoints, why not use the default policy
-        to back trace to the GPS waypoint where it was "ok".
-        """
-        #####################
-        time.sleep(0.4)
-
-        #destruct robot
-        self.robot._delete_robot_interface()
-
-    # Walk in the park recovery policy
-    def walk_in_the_park_recover(self):
-        self.robot.righting()
 
     def render(self):
         view_matrix = self.pybullet_client.computeViewMatrixFromYawPitchRoll(
