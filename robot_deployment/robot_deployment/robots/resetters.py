@@ -56,7 +56,7 @@ class GetupResetter(object):
         self._reset_task = reset_task.ResetTask(
             terminal_conditions=(upright, RewardPlateau()), real_robot=True)
         old_task = self._env.task
-        self._env.set_task(self._reset_task)
+        # self._env.set_task(self._reset_task)
 
         self._graph = tf.Graph()
         self._sess = tf.compat.v1.Session(graph=self._graph)

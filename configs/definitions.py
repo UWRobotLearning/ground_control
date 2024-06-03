@@ -378,6 +378,7 @@ class TrainConfig:
 @dataclass
 class DeploymentConfig:
     use_real_robot: bool = False
+    use_recover_robot: bool = False
     get_commands_from_joystick: bool = False
     action_repeat: int = 10
     timestep: float = 0.001

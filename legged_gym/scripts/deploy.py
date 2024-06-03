@@ -53,7 +53,8 @@ class DeployScriptConfig:
     episode_length_s: float = 200.
     checkpoint: int = -1
     device: str = "cpu"
-    use_real_robot: bool = True
+    use_real_robot: bool = False
+    use_recover_robot: bool = False
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 
@@ -87,6 +88,7 @@ class DeployScriptConfig:
     )
     deployment: DeploymentConfig = DeploymentConfig(
         use_real_robot="${use_real_robot}",
+        use_recover_robot="${use_recover_robot}",
         get_commands_from_joystick="${use_joystick}",
         render=DeploymentConfig.RenderConfig(
             show_gui="${not: ${use_real_robot}}"
@@ -209,7 +211,8 @@ def main(cfg: DeployScriptConfig):
         if terminated:
             log.warning("Unsafe, terminating!")
             #Need to check WITP here
-            deploy_env.recover()
+            if deploy_env.use_recover_robot:
+                deploy_env.recover()
             break
 
     log.info("8. Exit Cleanly")

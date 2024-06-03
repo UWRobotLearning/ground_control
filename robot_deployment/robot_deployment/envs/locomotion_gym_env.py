@@ -36,6 +36,7 @@ class LocomotionGymEnv(gym.Env):
         self.config = config
         self.obs_scales = obs_scales
         self.use_real_robot = config.use_real_robot
+        self.use_recover_robot = config.use_recover_robot
         self.get_commands_from_joystick = config.get_commands_from_joystick
         self.command_ranges = command_ranges
         self.sensors = sensors
@@ -51,9 +52,10 @@ class LocomotionGymEnv(gym.Env):
         if self.get_commands_from_joystick:
             self.gamepad = Gamepad(self.command_ranges)
             self.commands = np.array([0., 0., 0.])
+        if config.use_recover_robot:
 
-        self.task = reset_task.ResetTask()
-        self.recover = resetters.GetupResetter(self, self.use_real_robot)
+            self.task = reset_task.ResetTask()
+            self.recover = resetters.GetupResetter(self, self.use_real_robot, self.default_motor_angles)
 
     def _setup_robot(self):
         # make the simulator instance
