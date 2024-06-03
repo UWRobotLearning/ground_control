@@ -13,11 +13,11 @@ from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig, RunnerConfig, WandBConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig
+from configs.overrides.stand_task import BipedalStandTaskConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs.a1_recovery_short import A1RecoveryShort
+from legged_gym.envs.a1_biped import A1Biped
 from rsl_rl.runners import OnPolicyRunner
 from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experiment_path, save_resolved_config_as_pkl, 
                                       save_config_as_yaml, from_repo_root)
@@ -25,7 +25,7 @@ from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experi
 
 
 
-ENV = A1RecoveryShort
+ENV = A1Biped
 
 @dataclass
 class TrainScriptConfig:
@@ -52,7 +52,7 @@ class TrainScriptConfig:
     checkpoint_root: str = ""
     logging_root: str = from_repo_root("../experiment_logs")
 
-    task: TaskConfig = LocomotionTaskConfig()
+    task: TaskConfig = BipedalStandTaskConfig()
     train: TrainConfig = TrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
