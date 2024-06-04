@@ -61,7 +61,7 @@ class BipedalStandTaskConfig(TaskConfig):
     )
     commands: CommandsConfig = CommandsConfig(
         ranges=CommandsConfig.CommandRangesConfig(
-            lin_vel_x=(-1.,2.5),
+            lin_vel_x=(-1.,1.5),
         )
     )
     init_state: InitStateConfig = InitStateConfig(
@@ -72,26 +72,29 @@ class BipedalStandTaskConfig(TaskConfig):
     )
 
 
-
 @dataclass
-class RecoveryRewardsConfig(RewardsConfig):
+class BipedalStandRewardsConfig(RewardsConfig):
     only_positive_rewards: bool = False 
-    base_height_target: float = 0.8  #for standing
+    base_height_target: float = 0.7 #for standing
     soft_dof_pos_limit: float = 0.9
     #dof_pos_limits: float = -10.0 # Ege - adding penalty for out-of-limit joint positions
 
     @dataclass
-    class RecoveryRewardsScalesConfig(RewardsConfig.RewardScalesConfig):
-        x_axis_orientation: float = 2.5
+    class BipedalStandRewardsScalesConfig(RewardsConfig.RewardScalesConfig):
+        x_axis_orientation: float = 30
         torques: float = 0.001 # Ege - used to be -0.00001
-        base_height: float = 40.0
+        base_height: float = 20.0
         collision: float = 1
         action_change: float = 0.01
         xy_drift: float = 0.1 # Ege - adding penalty for drifting from start position
-        feet_contact: float = 8.0
-        lin_vel_z: float = 0.1
-        ang_vel_xy: float = 0.005
-    scales: RecoveryRewardsScalesConfig = RecoveryRewardsScalesConfig()
+        feet_contact: float = 10
+        lin_vel_z: float = 20
+        ang_vel_xy: float = 0.5
+        tracking_lin_y_vel: float = 10
+        rear_hip_torques = 10
+        front_hip_torques= 10
+
+    scales: BipedalStandRewardsScalesConfig = BipedalStandRewardsScalesConfig()
 
 
 
@@ -101,18 +104,18 @@ class RecoveryRewardsConfig(RewardsConfig):
 #########
 
 @dataclass
-class RecoveryAlgorithmConfig(AlgorithmConfig):
+class BipedalStandAlgorithmConfig(AlgorithmConfig):
     _target_: str = "rsl_rl.algorithms.PPO"
 
 @dataclass
-class RecoveryRunnerConfig(RunnerConfig):
+class BipedalStandRunnerConfig(RunnerConfig):
     checkpoint: int = 0
 
 @dataclass
-class RecoveryTrainConfig(TrainConfig):
+class BipedalStandTrainConfig(TrainConfig):
     _target_: str = "rsl_rl.runners.OnPolicyRunner"
-    algorithm: RecoveryAlgorithmConfig = RecoveryAlgorithmConfig()
-    runner: RecoveryRunnerConfig = RecoveryRunnerConfig(
+    algorithm: BipedalStandAlgorithmConfig = BipedalStandAlgorithmConfig()
+    runner: BipedalStandRunnerConfig = BipedalStandRunnerConfig(
         iterations="${oc.select: iterations,5000}"
     )
 

@@ -13,7 +13,7 @@ from omegaconf import OmegaConf
 from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig, RunnerConfig, WandBConfig
-from configs.overrides.stand_task import BipedalStandTaskConfig
+from configs.overrides.stand_task import BipedalStandTaskConfig, BipedalStandTrainConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -53,7 +53,7 @@ class TrainScriptConfig:
     logging_root: str = from_repo_root("../experiment_logs")
 
     task: TaskConfig = BipedalStandTaskConfig()
-    train: TrainConfig = TrainConfig()
+    train: TrainConfig = BipedalStandTrainConfig()
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 

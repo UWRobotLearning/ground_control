@@ -10,6 +10,7 @@ from isaacgym import gymtorch, gymapi, gymutil
 import torch
 from scipy.spatial.transform import Rotation 
 from legged_gym.envs.base_env import BaseEnv
+from legged_gym.envs.a1 import A1
 from legged_gym.utils.gamepad import Gamepad
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.legmath import quat_apply_yaw, wrap_to_pi
@@ -72,6 +73,13 @@ REWARDS_LOG_NAMES = dict(
     alive=f"{EPISODE_REWARDS}/safety/alive",
     tracking_lin_vel=f"{EPISODE_REWARDS}/task/tracking_lin_vel",
     tracking_ang_vel=f"{EPISODE_REWARDS}/task/tracking_ang_vel",
+    x_axis_orientation=f"{EPISODE_REWARDS}/task/x_axis_orientation",
+    xy_drift=f"{EPISODE_REWARDS}/task/xy_drift",
+    feet_contact=f"{EPISODE_REWARDS}/task/feet_contact",
+    track_lin_x_vel=f"{EPISODE_REWARDS}/task/track_lin_x_vel",
+    tracking_lin_y_vel=f"{EPISODE_REWARDS}/task/tracking_lin_y_vel",
+    rear_hip_torques=f"{EPISODE_REWARDS}/task/rear_hip_torques",
+    front_hip_torques=f"{EPISODE_REWARDS}/task/front_hip_torques",
 )
 
 EPISODE_DIAGNOSTICS = "Diagnostics"
@@ -104,7 +112,7 @@ DIAGNOSTICS_LOG_NAMES = dict(
     terrain_level=f"{EPISODE_DIAGNOSTICS}/terrain/level"
 )
 
-class A1(BaseEnv):
+class A1Biped(BaseEnv):
     def __init__(self, env: EnvConfig, observation: ObservationConfig, terrain: TerrainConfig,
                  commands: CommandsConfig, init_state: InitStateConfig, control: ControlConfig,
                  asset: AssetConfig, domain_rand: DomainRandConfig, rewards: RewardsConfig,
@@ -155,6 +163,12 @@ class A1(BaseEnv):
         """ Reset all robots. Additionally, if we use a history of observations,
         reset history of observations to all be the current observation.
         """
+        # Ege - if an inactive period at start is enabled,
+        #       update start_positions when env becomes "active"
+        if self.env_cfg.start_inactive_steps > 0:
+            starting_idx = (self.episode_length_buf == self.env_cfg.start_inactive_steps)
+            self.start_positions[starting_idx] = self.root_states[starting_idx, :3]
+        
         self.reset_idx(torch.arange(self.num_envs, device=self.device), log_extras=False)
         self.obs_buf_history.reset(
             torch.arange(self.num_envs, device=self.device),
@@ -181,6 +195,13 @@ class A1(BaseEnv):
         self.render()
         for _ in range(self.control_cfg.decimation):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
+            # Ege - if inactive period at start is enabled, disable env actions for that period
+            #       the variable "actions" can refer to position targets, thus torques (motor commands)
+            #       are zeroed instead to disable any motor force (hence, joint positions aren't affected)
+            if self.env_cfg.start_inactive_steps > 0:
+                inactive_idx = self.episode_length_buf <= self.env_cfg.num_inactive_steps
+                self.torques[inactive_idx] = torch.zeros((torch.sum(inactive_idx), self.torques.shape[1])).to(self.device)
+            
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
             # if self.device == 'cpu':
@@ -224,9 +245,14 @@ class A1(BaseEnv):
 
         self.episode_length_buf += 1
         self.common_step_counter += 1
+        # Ege - increasing goal length buffer, will call self.check_goal_reach to set some to 0 if necessary
+        self.goal_time_buf += 1
 
         self._compute_physical_measurements()
         self._post_physics_step_callback()
+
+        # Ege - calling self.check_goal_reach to update goal times
+        self.check_goal_reach()
 
         # compute observations, rewards, resets, ...
         self.check_termination()
@@ -246,14 +272,45 @@ class A1(BaseEnv):
             self._draw_debug_vis()
 
         return env_ids, ()
+    
+    def check_goal_reach(self):
+        base_height = self.root_states[:, 2] - self._get_center_heights() #torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+
+        # linear speed of the base (should be as small as possible)
+        base_lin_speed = torch.norm(self.root_states[:, 7:10], dim=1)
+
+        base_orientation = self._reward_slope_normal_orientation()
+
+        base_angular_vels = self.root_states[:, 10:13]
+
+        base_xy_distance_traveled = self.xy_drift()
+
+        goal_criteria = torch.ones((6, self.num_envs))
+
+        # binary vector - 1 if robot stays in goal, 0 otherwise
+        goal_criteria[0] = base_height <= self.goal_state_cfg.max_height_to_goal_ratio * self.rewards_cfg.base_height_target
+        goal_criteria[1] = base_height >= self.goal_state_cfg.min_height_to_goal_ratio * self.rewards_cfg.base_height_target
+        #goal_criteria[2] = base_lin_speed <= self.goal_state_cfg.max_speed
+        goal_criteria[3] = base_orientation >= self.goal_state_cfg.max_z_deviation
+        #goal_criteria[4] = torch.all(torch.abs(base_angular_vels) <= self.goal_state_cfg.max_angular_vel, dim=1)
+        goal_criteria[5] = base_xy_distance_traveled <= self.goal_state_cfg.max_xy_distance
+
+        goal_buf = torch.all(goal_criteria, axis=0).to(self.device)
+        # set robots' "time in goal" to 0 if they have gotten out of the goal, else don't change
+        self.goal_time_buf *= goal_buf
+
 
     def check_termination(self):
         """ Check if environments need to be reset
         """
-        self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
-        self.reset_buf |= self.time_out_buf
+        # Ege - disabling reset on contact forces, instead using the goal checking buffer
+        #self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        # Ege - changed > to >= in the next line.
+        self.time_out_buf = self.episode_length_buf >= self.max_episode_length # no terminal reward for time-outs
+        self.reset_buf[:] = self.time_out_buf
         self.termination_buf = torch.logical_and(self.reset_buf, torch.logical_not(self.time_out_buf))
+        if self.goal_state_cfg.reset_on_goal:
+            self.reset_buf[:] |= self.time_out_buf
 
     def reset_idx(self, env_ids, log_extras=True):
         """ Reset some environments.
@@ -270,6 +327,9 @@ class A1(BaseEnv):
         # update curriculum
         if self.terrain_cfg.curriculum:
             self._update_terrain_curriculum(env_ids)
+            # Ege - increasing trial buffer
+            self.curriculum_trial_buf[env_ids] += 1
+
         # avoid updating command curriculum at each step since the maximum command is common to all envs
         if self.commands_cfg.curriculum and (self.common_step_counter % self.max_episode_length==0):
             self.update_command_curriculum(env_ids)
@@ -306,9 +366,15 @@ class A1(BaseEnv):
                 self.extras["time_outs"] = self.time_out_buf
 
         # reset buffers
+        # Ege - adding goal_time_buf
         for buf in [self.last_actions, self.last_dof_vel, self.last_contacts, self.last_contact_forces,
-                    self.last_torques, self.feet_air_time]:
+                    self.last_torques, self.feet_air_time, self.goal_time_buf]:
             buf[env_ids] = torch.zeros_like(buf[env_ids])
+
+        # Ege - rolling success history forward
+        self.success_history[env_ids] = torch.roll(self.success_history[env_ids], -1, 1)
+        self.success_history[env_ids, -1] = self.success_buf[env_ids]
+
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
 
@@ -692,6 +758,23 @@ class A1(BaseEnv):
             # x-y position within `pos_noise` meters of the center
             pos_noise = self.init_state_cfg.pos_noise
             self.root_states[env_ids, :2] += torch_utils.torch_rand_float(-pos_noise, pos_noise, (len(env_ids), 2), device=self.device)
+        # Ege - setting robot heights based on their position in the terrain, if height samples are defined
+        if self.terrain_cfg.mesh_type in ['heightfield', 'trimesh']:
+            positions = self.root_states[env_ids, :2].detach().clone()
+            positions += self.terrain_cfg.border_size
+            positions = (positions/self.terrain_cfg.horizontal_scale).long()
+            px = torch.clip(positions[:,0], 0, self.height_samples.shape[0]-2)
+            py = torch.clip(positions[:,1], 0, self.height_samples.shape[1]-2)
+            height_samples = self.height_samples.float()
+            self.root_states[env_ids, 2] = self.base_init_state[2] + height_samples[px, py] * self.terrain_cfg.vertical_scale
+
+        # Ege - randomly initializing root orientation
+        if self.domain_rand_cfg.randomize_base_orientation and len(env_ids) > 0:
+            root_rot = Rotation.random(len(env_ids))
+            uprights = root_rot.apply(np.array([0, 0, 1]))[:, 2] > 0
+            if sum(uprights) > 0:
+                root_rot[uprights] *= Rotation.from_quat([0,1,0,0])
+            self.root_states[env_ids, 3:7] = torch.tensor(root_rot.as_quat(), device=self.device, dtype=torch.float)
 
         # base velocities
         lin_vel_noise, ang_vel_noise = self.init_state_cfg.lin_vel_noise, self.init_state_cfg.ang_vel_noise
@@ -701,6 +784,8 @@ class A1(BaseEnv):
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+        # Ege - resetting start positions, tracked for defining goal states
+        self.start_positions[env_ids] = self.root_states[env_ids, :3]
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity.
@@ -719,12 +804,17 @@ class A1(BaseEnv):
         if not self.init_done:
             # don't change on initial reset
             return
-        distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        # robots that walked far enough progress to harder terains
-        move_up = distance > self.terrain.env_length / 2
-        # robots that walked less than half of their required distance go to simpler terrains
-        move_down = (distance < torch.norm(self.commands[env_ids, :2], dim=1)*self.max_episode_length_s*0.5) * ~move_up
-        self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
+        # Ege - changing how robots move up/down for testing
+        is_moving = self.curriculum_trial_buf >= self.curriculum_cfg.success_rate_mean_window
+        # TODO - do we really want to reset curriculum_trial_buf if we are not resetting (is_moving but not in env_ids)?
+        self.curriculum_trial_buf[is_moving] = 0
+        is_moving = is_moving[env_ids] 
+        success_rates = torch.mean(self.success_history[env_ids].type(torch.float), axis=1)
+        move_up = success_rates >= self.curriculum_cfg.promotion_success_rate
+        move_down = success_rates <= self.curriculum_cfg.demotion_success_rate * ~move_up
+        self.terrain_levels[env_ids] += is_moving[env_ids] * (1 * move_up - 1 * move_down)
+
+        #self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one
         self.terrain_levels[env_ids] = torch.where(self.terrain_levels[env_ids]>=self.max_terrain_level,
                                                    torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
@@ -947,7 +1037,7 @@ class A1(BaseEnv):
             self.reward_names.append(name)
             name = '_reward_' + name
             self.reward_functions.append(getattr(self, name))
-
+            
         # reward episode sums
         self.episode_sums = {name: torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
                              for name in self.reward_scales.keys()}
@@ -1269,18 +1359,25 @@ class A1(BaseEnv):
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
 
+    # Ege - calculates distance in the xy-plane from starting position 
+    def xy_drift(self, env_ids=None):
+        cur_pos, start_pos = self.root_states[:, :2], self.start_positions[:, :2]
+        if env_ids is not None:
+            cur_pos, start_pos = cur_pos[env_ids], start_pos[env_ids]
+        return torch.norm(cur_pos - start_pos, dim=1)
+
     #---------------------------------------------
     #------------ reward functions----------------
     #---------------------------------------------
 
     #------------ action rewards----------------
-    def _reward_action(self):
-        # Penalize magnitude of actions
-        return -torch.sum(torch.square(self.actions), dim=1)
+    # def _reward_action(self):
+    #     # Penalize magnitude of actions
+    #     return -torch.sum(torch.square(self.actions), dim=1)
 
-    def _reward_action_change(self):
-        # Penalize changes in actions
-        return -torch.sum(torch.square(self.action_change), dim=1)
+    # def _reward_action_change(self):
+    #     # Penalize changes in actions
+    #     return -torch.sum(torch.square(self.action_change), dim=1)
 
     #------------ base link rewards----------------
     # def _reward_lin_vel_z(self):
@@ -1298,9 +1395,9 @@ class A1(BaseEnv):
     #     # Penalize non flat base orientation
     #     return -torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
 
-    def _reward_base_height(self):
-        # Penalize base height away from target
-        return -torch.square(self.base_heights - self.rewards_cfg.base_height_target)
+    # def _reward_base_height(self):
+    #     # Penalize base height away from target
+    #     return -torch.square(self.base_heights - self.rewards_cfg.base_height_target)
 
     #------------ joints rewards----------------
     # def _reward_torques(self):
@@ -1324,14 +1421,14 @@ class A1(BaseEnv):
     #     # clip to max error = 1 rad/s per joint to avoid huge penalties
     #     return -torch.sum(self.dof_vel_out_of_limits.clip(min=0., max=1.), dim=1)
 
-    def _reward_soft_torque_limits(self):
-        # penalize torques too close to the limit
-        return -torch.sum(self.torque_out_of_limits.clip(min=0.), dim=1)
+    # def _reward_soft_torque_limits(self):
+    #     # penalize torques too close to the limit
+    #     return -torch.sum(self.torque_out_of_limits.clip(min=0.), dim=1)
 
     #------------ energy rewards----------------
-    def _reward_power(self):
-        # Penalize power consumption (mechanical + heat)
-        return -self.power
+    # def _reward_power(self):
+    #     # Penalize power consumption (mechanical + heat)
+    #     return -self.power
 
     # def _reward_cost_of_transport(self):
     #     # Penalize cost of transport (power / (weight * speed))
@@ -1362,13 +1459,13 @@ class A1(BaseEnv):
     def _reward_alive(self):
         return (1-self.termination_buf.float())
 
-    def _reward_stumble(self):
-        # Penalize feet hitting vertical surfaces
-        return -torch.any(self.stumbles, dim=1).float()
+    # def _reward_stumble(self):
+    #     # Penalize feet hitting vertical surfaces
+    #     return -torch.any(self.stumbles, dim=1).float()
 
-    def _reward_stand_still(self):
-        # Penalize motion at zero commands
-        return -torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+    # def _reward_stand_still(self):
+    #     # Penalize motion at zero commands
+    #     return -torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
     #------------ task rewards----------------
 
@@ -1377,10 +1474,10 @@ class A1(BaseEnv):
     #     lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
     #     return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
     
-    def _reward_tracking_lin_y_vel(self):
-        # Tracking of linear velocity commands (y axes)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, 2] - self.base_lin_vel[:, 2]), dim=1)
-        return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
+    # def _reward_tracking_lin_y_vel(self):
+    #     # Tracking of linear velocity commands (y axes)
+    #     lin_vel_error = torch.sum(torch.square(self.commands[:, 2] - self.base_lin_vel[:, 2]), dim=1)
+    #     return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
 
     # def _reward_tracking_ang_vel(self):
     #     # Tracking of angular velocity commands (yaw)
@@ -1389,24 +1486,44 @@ class A1(BaseEnv):
     
     #------------- bipedal standing-------------------
 
-    def _reward_stand_pitch(self):
-        return torch.square(torch.sin(self.projected_gravity[:, 1]) + 9.81)
+    def _reward_xy_drift(self):
+        # Penalize drifting in xy plane from starting position
+        return -torch.square(self.xy_drift())
 
-    def _reward_stand_foot(self):
-        return -torch.sum(self.foot_contact_forces[:, :2])
+    def front_feet(self):
+        return torch.all(torch.norm(self.contact_forces[:, :2, :2], dim=2) < 0, dim=1)
+        
+    def rear_feet(self):
+        return torch.all(torch.norm(self.contact_forces[:, 2:, :2], dim=2) > 0, dim=1)
+        
+    def _reward_feet_contact(self):
+        # Reward all feet being in contact (hopefully with ground) after recovery
+        return self.rear_feet() * self.front_feet()
+
+    # def _reward_stand_pitch(self):
+    #     rot = Rotation.from_quat(self.base_quat.cpu())
+    #     orientations = rot.apply(np.array([1,0,0]))[:, 2]
+    #     return torch.square(torch.sin(self.projected_gravity[:, 2]) + 9.81)
     
     def _reward_track_lin_x_vel(self):
-        return torch.square(self.commands[:, 0] - self.base_ang_vel[:, 0]) #lin_x - roll
+        return torch.square(self.commands[:, 0] - self.base_ang_vel[:, 1]) #lin_x - roll
 
     def _reward_x_axis_orientation(self):
         # Reward if orientation close to upright (+x), penalize the opposite.
         rot = Rotation.from_quat(self.base_quat.cpu())
-        orientations = rot.apply(np.array([1,0,0]))[:, 2]
+        orientations = rot.apply(np.array([-1,0,0]))[:, 2]
         return torch.tensor(orientations).to(self.device)
     
-    # for only last 2 feet
-    def _reward_feet_contact(self):
-        return torch.all(torch.norm(self.contact_forces[:, 2:, :2], dim=2) > 0, dim=1)
+    def _reward_rear_hip_torques(self):
+        return torch.square(self.torques[:, 7] + self.torques[:, 10])
+
+    def _reward_front_hip_torques(self):
+        return -torch.square(self.torques[:, 1] + self.torques[:, 4])
+
+    def _reward_lin_vel_z(self):
+        # increase z axis base linear velocity
+        return torch.square(self.base_lin_vel[:, 2])
+    
     #-------------------------------------------------
     #------------ diagnostic functions----------------
     #-------------------------------------------------

@@ -194,6 +194,13 @@ class RewardsConfig:
         stand_still: float = 0.
         feet_contact_forces: float = 0.
         feet_contact_force_change: float = 0.
+        x_axis_orientation: float = 0.
+        xy_drift: float = 0.
+        feet_contact: float = 0.
+        track_lin_x_vel: float = 0.
+        tracking_lin_y_vel:float=0.
+        rear_hip_torques:float = 0.
+        front_hip_torques:float = 0.
     scales: RewardScalesConfig = RewardScalesConfig()
 
 @dataclass
@@ -340,7 +347,7 @@ class AlgorithmConfig:
 @dataclass
 class WandBConfig:
     # settings on logging with Weights and Biases (wandb)
-    enable: bool = True # logging with wandb
+    enable: bool = False # logging with wandb
     project_name: str = 'ground_control' # name of the project to log to
     entity: Optional[str] = None # username for sending the logs, set None for default user in wandb
     log_code: bool = True # code saving (all .py files) to wandb
