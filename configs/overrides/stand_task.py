@@ -55,7 +55,7 @@ class BipedalStandTaskConfig(TaskConfig):
         critic_privileged_sensors=("base_lin_vel", "base_ang_vel", "terrain_height", "friction", "base_mass"),
     )
     domain_rand: DomainRandConfig = DomainRandConfig(
-        friction_range=(0.4, 2.5),
+        friction_range=(0.7, 2.5),
         added_mass_range=(-1.5, 2.5),
         randomize_base_mass=True,
     )
@@ -76,8 +76,8 @@ class BipedalStandTaskConfig(TaskConfig):
 class BipedalStandRewardsConfig(RewardsConfig):
     only_positive_rewards: bool = False 
     base_height_target: float = 0.7 #for standing
-    soft_dof_pos_limit: float = 0.9
-    #dof_pos_limits: float = -10.0 # Ege - adding penalty for out-of-limit joint positions
+    soft_dof_pos_limit: float = 2
+    dof_pos_limits: float = 2.0 # Ege - adding penalty for out-of-limit joint positions
 
     @dataclass
     class BipedalStandRewardsScalesConfig(RewardsConfig.RewardScalesConfig):
@@ -94,7 +94,7 @@ class BipedalStandRewardsConfig(RewardsConfig):
         rear_thigh_torques = 1
         front_thigh_torques= 1
         stand_pitch = 4
-        lin_vel_x = 5
+        lin_vel_x = 100
         lin_vel_y = 5
         stand_still = 10
         rear_motors = 40

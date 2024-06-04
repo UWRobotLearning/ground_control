@@ -1487,9 +1487,9 @@ class A1Biped(BaseEnv):
     
     #------------- bipedal standing-------------------
 
-    def _reward_xy_drift(self):
-        # Penalize drifting in xy plane from starting position
-        return -torch.square(self.xy_drift())
+    # def _reward_xy_drift(self):
+    #     # Penalize drifting in xy plane from starting position
+    #     return -torch.square(self.xy_drift())
 
     def front_feet(self):
         return torch.all(torch.norm(self.contact_forces[:, :2, :2], dim=2) < 0, dim=1)

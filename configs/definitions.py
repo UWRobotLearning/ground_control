@@ -351,7 +351,7 @@ class AlgorithmConfig:
 @dataclass
 class WandBConfig:
     # settings on logging with Weights and Biases (wandb)
-    enable: bool = True # logging with wandb
+    enable: bool = False # logging with wandb
     project_name: str = 'ground_control' # name of the project to log to
     entity: Optional[str] = None # username for sending the logs, set None for default user in wandb
     log_code: bool = True # code saving (all .py files) to wandb
