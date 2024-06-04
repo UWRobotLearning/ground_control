@@ -81,18 +81,23 @@ class BipedalStandRewardsConfig(RewardsConfig):
 
     @dataclass
     class BipedalStandRewardsScalesConfig(RewardsConfig.RewardScalesConfig):
-        x_axis_orientation: float = 30
+        x_axis_orientation: float = 25
         torques: float = 0.001 # Ege - used to be -0.00001
-        base_height: float = 20.0
+        base_height: float = 1.0
         collision: float = 1
         action_change: float = 0.01
         xy_drift: float = 0.1 # Ege - adding penalty for drifting from start position
-        feet_contact: float = 10
-        lin_vel_z: float = 20
+        feet_contact: float = 1.   
+        lin_vel_z: float = 1
         ang_vel_xy: float = 0.5
-        tracking_lin_y_vel: float = 10
-        rear_hip_torques = 10
-        front_hip_torques= 10
+        tracking_lin_y_vel: float = 5
+        rear_thigh_torques = 1
+        front_thigh_torques= 1
+        stand_pitch = 4
+        lin_vel_x = 5
+        lin_vel_y = 5
+        stand_still = 10
+        rear_motors = 40
 
     scales: BipedalStandRewardsScalesConfig = BipedalStandRewardsScalesConfig()
 

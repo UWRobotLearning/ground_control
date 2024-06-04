@@ -25,7 +25,6 @@ from legged_gym.utils.helpers import (set_seed, get_load_path, get_latest_experi
 
 
 
-ENV = A1Biped
 
 @dataclass
 class TrainScriptConfig:
@@ -88,7 +87,7 @@ def main(cfg: TrainScriptConfig) -> None:
 
     log.info("3. Initializing Env and Runner")
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
-    env: ENV = hydra.utils.instantiate(cfg.task)
+    env: A1Biped = hydra.utils.instantiate(cfg.task)
     runner: OnPolicyRunner = hydra.utils.instantiate(cfg.train, env=env, _recursive_=False)
 
     if cfg.train.runner.resume_root != "":

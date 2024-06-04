@@ -10,7 +10,7 @@ from isaacgym import gymtorch, gymapi, gymutil
 import torch
 from scipy.spatial.transform import Rotation 
 from legged_gym.envs.base_env import BaseEnv
-from legged_gym.envs.a1 import A1
+
 from legged_gym.utils.gamepad import Gamepad
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.legmath import quat_apply_yaw, wrap_to_pi
@@ -29,8 +29,6 @@ log = logging.getLogger(__name__)
    /
   x
 """
-
-
 
 # TODO: generate from URDF?
 # from origin of trunk
@@ -389,7 +387,6 @@ class A1Biped(BaseEnv):
         """Fills buffers corresponding to various physical quantities.
         """
         self.base_quat[:]    = self.root_states[:, 3:7]
-        self.base_angles[:]  = torch_utils
         self.base_lin_vel[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity[:] = torch_utils.quat_rotate_inverse(self.base_quat, self.gravity_vec)
@@ -430,6 +427,10 @@ class A1Biped(BaseEnv):
         self.air_time_on_contact[:] = torch.sum(self.feet_air_time * self.first_contacts, dim=1)
         self.contact_count[:] += self.first_contacts.sum(dim=1)
         self.feet_air_time *= torch.logical_not(contact_filt)
+
+
+        #Bipedal standing
+        
 
     def compute_reward(self):
         """ Compute rewards
@@ -1379,7 +1380,7 @@ class A1Biped(BaseEnv):
     #     # Penalize changes in actions
     #     return -torch.sum(torch.square(self.action_change), dim=1)
 
-    #------------ base link rewards----------------
+    # ------------ base link rewards----------------
     # def _reward_lin_vel_z(self):
     #     # Penalize z axis base linear velocity
     #     return -torch.square(self.base_lin_vel[:, 2])
@@ -1388,12 +1389,12 @@ class A1Biped(BaseEnv):
     #     # Penalize xy axes base angular velocity
     #     return -torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
 
-    def _reward_ang_vel_y(self):
-        return -torch.sum(torch.square(self.base_ang_vel[:, 2]), dim=1)
+    # def _reward_ang_vel_y(self):
+    #     return torch.sum(torch.square(self.base_ang_vel[:, 2]), dim=1)
 
     # def _reward_orientation(self):
-    #     # Penalize non flat base orientation
-    #     return -torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+    #     # Increase non flat base orientation
+    #     return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
 
     # def _reward_base_height(self):
     #     # Penalize base height away from target
@@ -1401,8 +1402,8 @@ class A1Biped(BaseEnv):
 
     #------------ joints rewards----------------
     # def _reward_torques(self):
-    #     # Penalize torques
-    #     return -torch.sum(torch.square(self.torques), dim=1)
+    #     # Increase torques
+    #     return torch.sum(torch.square(self.torques), dim=1)
 
     # def _reward_dof_vel(self):
     #     # Penalize dof velocities
@@ -1440,8 +1441,8 @@ class A1Biped(BaseEnv):
     #     return self.rew_air_time_on_contact
 
     # def _reward_feet_contact_forces(self):
-    #     # penalize high contact forces
-    #     return -torch.sum(self.foot_contact_forces_out_of_limits, dim=1)
+    #     # Increase high contact forces
+    #     return torch.sum(self.foot_contact_forces_out_of_limits, dim=1)
 
     # def _reward_feet_contact_force_change(self):
     #     # penalize foot jerk to prevent large motor backlash
@@ -1463,9 +1464,9 @@ class A1Biped(BaseEnv):
     #     # Penalize feet hitting vertical surfaces
     #     return -torch.any(self.stumbles, dim=1).float()
 
-    # def _reward_stand_still(self):
-    #     # Penalize motion at zero commands
-    #     return -torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+    def _reward_stand_still(self):
+        # Penalize motion at zero commands
+        return -torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
     #------------ task rewards----------------
 
@@ -1474,10 +1475,10 @@ class A1Biped(BaseEnv):
     #     lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
     #     return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
     
-    # def _reward_tracking_lin_y_vel(self):
-    #     # Tracking of linear velocity commands (y axes)
-    #     lin_vel_error = torch.sum(torch.square(self.commands[:, 2] - self.base_lin_vel[:, 2]), dim=1)
-    #     return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
+    def _reward_tracking_pitch(self):
+        # Tracking of linear velocity commands (y axes)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2]), dim=1)
+        return torch.exp(-lin_vel_error/self.rewards_cfg.tracking_sigma**2)
 
     # def _reward_tracking_ang_vel(self):
     #     # Tracking of angular velocity commands (yaw)
@@ -1500,29 +1501,37 @@ class A1Biped(BaseEnv):
         # Reward all feet being in contact (hopefully with ground) after recovery
         return self.rear_feet() * self.front_feet()
 
-    # def _reward_stand_pitch(self):
-    #     rot = Rotation.from_quat(self.base_quat.cpu())
-    #     orientations = rot.apply(np.array([1,0,0]))[:, 2]
-    #     return torch.square(torch.sin(self.projected_gravity[:, 2]) + 9.81)
-    
-    def _reward_track_lin_x_vel(self):
-        return torch.square(self.commands[:, 0] - self.base_ang_vel[:, 1]) #lin_x - roll
+
+    # def _reward_track_lin_x_vel(self):
+    #     return torch.square(self.commands[:, 0] - self.base_ang_vel[:, 2]) #lin_x - roll
 
     def _reward_x_axis_orientation(self):
         # Reward if orientation close to upright (+x), penalize the opposite.
         rot = Rotation.from_quat(self.base_quat.cpu())
-        orientations = rot.apply(np.array([-1,0,0]))[:, 2]
+        orientations = rot.apply(np.array([1,0,0]))[:, 0]
         return torch.tensor(orientations).to(self.device)
     
-    def _reward_rear_hip_torques(self):
-        return torch.square(self.torques[:, 7] + self.torques[:, 10])
+    # def _reward_rear_thigh_torques(self):
+    #     return torch.square(self.torques[:, 7] + self.torques[:, 10])
 
-    def _reward_front_hip_torques(self):
-        return -torch.square(self.torques[:, 1] + self.torques[:, 4])
+    # def _reward_front_thigh_torques(self):
+    #     return -torch.square(self.torques[:, 1] + self.torques[:, 4])
 
-    def _reward_lin_vel_z(self):
-        # increase z axis base linear velocity
-        return torch.square(self.base_lin_vel[:, 2])
+    def _reward_lin_vel_x(self):
+        return - torch.square(self.base_lin_vel[:, 0])
+
+    def _reward_lin_vel_y(self):
+        return - torch.square(self.base_lin_vel[:, 1])
+
+    def _reward_rear_motors(self):
+        return 0
+
+    # def _reward_lin_vel_z(self):
+    #     # increase z axis base linear velocity
+    #     return torch.square(self.base_lin_vel[:, 2])
+
+    def _reward_stand_pitch(self):
+        return torch.sin(self.base_ang_vel[:, 0])
     
     #-------------------------------------------------
     #------------ diagnostic functions----------------
