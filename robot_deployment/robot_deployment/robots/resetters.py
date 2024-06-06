@@ -85,7 +85,7 @@ class GetupResetter(object):
                                                sess=self._sess,
                                                **agent_configs)
         self._reset_model.load_model(
-            os.path.join(parentdir, "real/model-reset.ckpt"))
+            os.path.join(parentdir, "robots/model-reset.ckpt"))
         self._action_filter = self._env.robot._BuildActionFilter(highcut=[3])
         self._env.set_task(old_task)
         self._standing_pose = standing_pose

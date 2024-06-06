@@ -27,6 +27,7 @@ from rsl_rl.runners import OnPolicyRunner
 from robot_deployment.envs.locomotion_gym_env import LocomotionGymEnv
 import torch
 
+
 # #observations
 # obs = ''
 
@@ -54,7 +55,7 @@ class DeployScriptConfig:
     checkpoint: int = -1
     device: str = "cpu"
     use_real_robot: bool = False
-    use_recover_robot: bool = False
+    use_recover_robot: bool = True
 
     hydra: ExperimentHydraConfig = ExperimentHydraConfig()
 

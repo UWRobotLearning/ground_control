@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 import gym
+import gymnasium
 # import moviepy.editor as mpy
 import pybullet as p
 import real.sac_dev.util.logger as logger
@@ -83,18 +84,19 @@ class RLAgent(abc.ABC):
     def get_action_size(self):
         action_size = 0
         action_space = self.get_action_space()
-
-        if (isinstance(action_space, gym.spaces.Box)):
+        # Allow gymnasium.spaces.Box
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             action_size = np.prod(action_space.shape)
         elif (isinstance(action_space, gym.spaces.Discrete)):
             action_size = 1
         else:
             assert False, "Unsupported action space: " + str(
-                self._env.action_space)
+                self._env.action_space) + str(type(self._env.action_space))
 
         return action_size
 
     def get_action_space(self):
+        print("Action space = ", self._env.action_space)
         return self._env.action_space
 
     def get_total_samples(self):
@@ -351,7 +353,7 @@ class RLAgent(abc.ABC):
 
     def get_action_bound_min(self):
         action_space = self.get_action_space()
-        if (isinstance(action_space, gym.spaces.Box)):
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             bound_min = self._env.action_space.low
         else:
             bound_min = -np.inf * np.ones(1)
@@ -359,7 +361,7 @@ class RLAgent(abc.ABC):
 
     def get_action_bound_max(self):
         action_space = self.get_action_space()
-        if (isinstance(action_space, gym.spaces.Box)):
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             bound_max = self._env.action_space.high
         else:
             bound_max = np.inf * np.ones(1)
@@ -404,6 +406,7 @@ class RLAgent(abc.ABC):
 
         high = self.get_action_bound_max().copy()
         low = self.get_action_bound_min().copy()
+        print(high,low)
         inf_mask = np.logical_or((high >= np.finfo(np.float32).max),
                                  (low <= np.finfo(np.float32).min))
         assert (not any(inf_mask)), "actions must be bounded"
@@ -596,7 +599,7 @@ class RLAgent(abc.ABC):
                          reuse=False):
         action_space = self.get_action_space()
 
-        if (isinstance(action_space, gym.spaces.Box)):
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             output_size = self.get_action_size()
 
             mean_kernel_init = tf.compat.v1.random_uniform_initializer(
@@ -663,7 +666,7 @@ class RLAgent(abc.ABC):
 
     def _action_l2_loss(self, a_pd_tf):
         action_space = self.get_action_space()
-        if (isinstance(action_space, gym.spaces.Box)):
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             val = a_pd_tf.mean()
         elif (isinstance(action_space, gym.spaces.Discrete)):
             val = a_pd_tf.logits
@@ -677,7 +680,7 @@ class RLAgent(abc.ABC):
 
     def _action_bound_loss(self, a_pd_tf):
         action_space = self.get_action_space()
-        if (isinstance(action_space, gym.spaces.Box)):
+        if (isinstance(action_space, gym.spaces.Box) or isinstance(action_space, gymnasium.spaces.Box)):
             axis = -1
             a_bound_min = self.get_action_bound_min()
             a_bound_max = self.get_action_bound_max()

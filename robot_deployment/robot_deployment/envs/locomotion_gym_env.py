@@ -14,6 +14,7 @@ from robot_deployment.robots.motors import MotorCommand
 from robot_deployment.robots import a1
 from robot_deployment.robots import a1_robot
 from robot_deployment.robots import resetters,reset_task
+import pdb
 
 
 
@@ -44,16 +45,18 @@ class LocomotionGymEnv(gym.Env):
         self.last_frame_time = 0.
         self.env_time_step = self.config.timestep * self.config.action_repeat
 
-        self._setup_robot()
-        self.default_motor_angles = self.robot.motor_group.init_positions
-        self.observation_space = self._build_observation_space()
-        self.action_space = self._build_action_space()
-        
         if self.get_commands_from_joystick:
             self.gamepad = Gamepad(self.command_ranges)
             self.commands = np.array([0., 0., 0.])
-        if config.use_recover_robot:
 
+        self._setup_robot()
+
+        self.default_motor_angles = self.robot.motor_group.init_positions
+        self.observation_space = self._build_observation_space()
+
+        self.action_space = self._build_action_space()
+        
+        if config.use_recover_robot:    
             self.task = reset_task.ResetTask()
             self.recover = resetters.GetupResetter(self, self.use_real_robot, self.default_motor_angles)
 
@@ -188,7 +191,10 @@ class LocomotionGymEnv(gym.Env):
                 )[0]
                 obs_list.append(projected_gravity)
             elif sensor == "last_action":
-                obs_list.append((self.last_action - self.default_motor_angles) / self.config.action_scale * self.obs_scales.last_action)
+                if self.last_action is None:
+                    obs_list.append((self.default_motor_angles) / self.config.action_scale * self.obs_scales.last_action)
+                else:    
+                    obs_list.append((self.last_action - self.default_motor_angles) / self.config.action_scale * self.obs_scales.last_action)
             else:
                 raise ValueError(f"Sensor not recognized: {sensor}")
 
@@ -238,8 +244,15 @@ class LocomotionGymEnv(gym.Env):
         #self.pybullet_client.changeDynamics(self.ground_id, -1, lateralFriction=0.5)
 
     def _build_observation_space(self):
-        # TODO
-        pass
+        # Builds infinte observation space for start
+        obs = self.get_observation()
+        print("observation space legnth: ", obs)
+        return gym.spaces.Box(
+                float("-inf"),
+                float("inf"),
+                shape=obs.shape,
+                dtype=np.float32
+            )
 
     def _build_action_space(self):
         """Builds action space corresponding to joint position control"""
