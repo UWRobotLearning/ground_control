@@ -10,7 +10,6 @@ import wandb
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from pydantic import TypeAdapter
 
 from configs.definitions import TaskConfig, TrainConfig, RunnerConfig, WandBConfig
 from configs.overrides.locomotion_task import LocomotionTaskConfig
@@ -46,6 +45,7 @@ class TrainScriptConfig:
     headless: bool = False
     checkpoint_root: str = ""
     logging_root: str = from_repo_root("../experiment_logs")
+    typechecking: bool = True
 
     task: TaskConfig = LocomotionTaskConfig()
     train: TrainConfig = TrainConfig()
@@ -59,8 +59,10 @@ cs.store(name="config", node=TrainScriptConfig)
 def main(cfg: TrainScriptConfig) -> None:
     log.info("1. Printing and serializing frozen TrainScriptConfig")
     OmegaConf.resolve(cfg)
-    # Type-checking (and other validation if defined) via Pydantic
-    cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg))
+    if cfg.typechecking:
+        from pydantic import TypeAdapter
+        # Type-checking (and other validation if defined) via Pydantic
+        cfg = TypeAdapter(TrainScriptConfig).validate_python(OmegaConf.to_container(cfg, resolve=True))
     print(OmegaConf.to_yaml(cfg))
     save_config_as_yaml(cfg)
     #save_resolved_config_as_pkl(cfg)
@@ -71,7 +73,7 @@ def main(cfg: TrainScriptConfig) -> None:
         wandb_run = wandb.init(
             project=wandb_cfg.project_name, 
             entity=wandb_cfg.entity,
-            config=dict(OmegaConf.structured(cfg)),
+            config=OmegaConf.to_container(cfg, resolve=True) if not cfg.typechecking else dict(OmegaConf.structured(cfg)),
             job_type='train'
         )
         if wandb_cfg.log_code:
