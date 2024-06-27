@@ -155,6 +155,12 @@ class A1Continual(BaseTask):
         self.obs_buf_history.reset(
             torch.arange(self.num_envs, device=self.device),
             self.obs_buf[torch.arange(self.num_envs, device=self.device)])
+        self.critic_obs_buf_history.reset(
+            torch.arange(self.num_envs, device=self.device),
+            self.critic_obs_buf[torch.arange(self.num_envs, device=self.device)])
+        self.extra_obs_buf_history.reset(
+            torch.arange(self.num_envs, device=self.device),
+            self.extra_obs_buf[torch.arange(self.num_envs, device=self.device)])
         obs, critic_obs, *_ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         return obs, critic_obs
 
@@ -200,20 +206,49 @@ class A1Continual(BaseTask):
         clip_obs = self.normalization_cfg.clip_observations
         self.obs_buf.clip_(-clip_obs, clip_obs)
         self.critic_obs_buf.clip_(min=-clip_obs, max=clip_obs)
+        self.extra_obs_buf.clip_(min=-clip_obs, max=clip_obs)
+        ## Actor observations
         self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
         self.obs_buf_history.insert(self.obs_buf)
+        ## Critic observations
+        self.critic_obs_buf_history.reset(reset_env_ids, self.critic_obs_buf[reset_env_ids])
+        self.critic_obs_buf_history.insert(self.critic_obs_buf)
+        ## Extra observations
+        self.extra_obs_buf_history.reset(reset_env_ids, self.extra_obs_buf[reset_env_ids])
+        self.extra_obs_buf_history.insert(self.extra_obs_buf)
         policy_obs = self.get_observations()
         critic_obs = self.get_critic_observations()
 
         infos, self.extras = self.extras, dict()
         return policy_obs, critic_obs, self.rew_buf, self.reset_buf, infos, *other_post_physics_outputs
 
-    def get_observations(self):
-        return self.obs_buf_history.get_obs_vec(np.arange(self.history_steps))
+    def get_observations(self, steps=None):
+        if steps is None:
+            steps = self.history_steps
+        else:
+            assert isinstance(steps, int) and (steps > 0) and (steps <= self.history_steps) 
+        
+        return self.obs_buf_history.get_obs_vec(np.arange(steps))
 
-    def get_critic_observations(self):
-        policy_obs = self.get_observations()
-        return torch.cat((policy_obs, self.critic_obs_buf[..., self.num_obs:]), dim=-1)
+    def get_critic_observations(self, steps=None):
+        if self.observation_cfg.use_history_for_critic:
+            if steps is None:
+                steps = self.history_steps
+            else:
+                assert isinstance(steps, int) and (steps > 0) and (steps <= self.history_steps)
+
+            return self.critic_obs_buf_history.get_obs_vec(np.arange(steps))
+        else:
+            policy_obs = self.get_observations(steps=steps)
+            return torch.cat((policy_obs, self.critic_obs_buf[..., self.num_obs:]), dim=-1)
+
+    def get_extra_observations(self, steps=None):
+        if steps is None:
+            steps = self.history_steps
+        else:
+            assert isinstance(steps, int) and (steps > 0) and (steps <= self.history_steps) 
+
+        return self.extra_obs_buf_history.get_obs_vec(np.arange(steps))
 
     def post_physics_step(self):
         """ check terminations, compute observations and rewards
@@ -992,11 +1027,11 @@ class A1Continual(BaseTask):
                                 for name in self.diagnostic_names}
         
     def _define_observation_space(self):
-        num_obs = self.num_critic_obs + self.num_extra_obs
+        num_obs = (self.num_critic_obs + self.num_extra_obs)*self.history_steps
         obs_limit = self.normalization_cfg.clip_observations
         self.observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(num_obs,))
     
-        self.actor_observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(self.num_obs,))
+        self.actor_observation_space = gym.spaces.Box(low=-obs_limit, high=obs_limit, shape=(self.num_obs*self.history_steps,))
 
     def _define_action_space(self):
         num_actions = self.num_actions
@@ -1010,24 +1045,42 @@ class A1Continual(BaseTask):
         self.action_space = gym.spaces.Box(low=lower, high=upper, shape=(num_actions,))
 
     def _define_observation_labels(self):
+        '''
+        The order of observation labels is as follows:
+        (sensors + critic_privileged_sensors) at t=1
+        (sensors + critic_privileged_sensors) at t=2
+        ...
+        (sensors + critic_privileged_sensors) at t=history_length
+        (extra_sensors) at t=1
+        (extra_sensors) at t=2
+        ...
+        (extra_sensors) at t=history_length
+
+        '''
         start_idx = 0
 
         self.actor_labels = {}
-        for sensor in self.observation_cfg.sensors:
-            self.actor_labels[sensor] = (start_idx, start_idx+self.sensor_dims[sensor])
-            start_idx += self.sensor_dims[sensor]
-
         self.critic_labels = {}
-        for sensor in self.observation_cfg.critic_privileged_sensors:
-            self.critic_labels[sensor] = (start_idx, start_idx+self.sensor_dims[sensor])
-            start_idx += self.sensor_dims[sensor]
-
         self.extra_labels = {}
-        for sensor in self.observation_cfg.extra_sensors:
-            self.extra_labels[sensor] = (start_idx, start_idx+self.sensor_dims[sensor])
-            start_idx += self.sensor_dims[sensor]
+        self.actor_critic_labels = {}
+        for i in range(self.history_steps):
+            for sensor in self.observation_cfg.sensors:
+                self.actor_labels[f"{sensor}_{i}"] = (start_idx, start_idx+self.sensor_dims[sensor])
+                self.actor_critic_labels[f"{sensor}_{i}"] = (start_idx, start_idx+self.sensor_dims[sensor])
+                start_idx += self.sensor_dims[sensor]
 
-        self.observation_labels = {**self.actor_labels, **self.critic_labels, **self.extra_labels}
+        
+            for sensor in self.observation_cfg.critic_privileged_sensors:
+                self.critic_labels[f"{sensor}_{i}"] = (start_idx, start_idx+self.sensor_dims[sensor])
+                self.actor_critic_labels[f"{sensor}_{i}"] = (start_idx, start_idx+self.sensor_dims[sensor])
+                start_idx += self.sensor_dims[sensor]
+
+        for i in range(self.history_steps):
+            for sensor in self.observation_cfg.extra_sensors:
+                self.extra_labels[f"{sensor}_{i}"] = (start_idx, start_idx+self.sensor_dims[sensor])
+                start_idx += self.sensor_dims[sensor]
+
+        self.observation_labels = {**self.actor_critic_labels, **self.extra_labels}
 
     def _create_ground_plane(self):
         """ Adds a ground plane to the simulation, sets friction and restitution based on the cfg.
@@ -1075,10 +1128,14 @@ class A1Continual(BaseTask):
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
 
     def _update_camera_location(self, env_id=0):
-        camera_pos = gymapi.Vec3(1, 1, 1) #gymapi.Vec3(2, -1.5, 0.9)
-        actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
-        root_states = gymtorch.wrap_tensor(actor_root_state)
-        base_pos = (root_states[env_id, :3]).cpu().numpy()
+        camera_relative_pos = gymapi.Vec3(1, 1, 1) #gymapi.Vec3(2, -1.5, 0.9)
+        ## Previous base_pos
+        # actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
+        # root_states = gymtorch.wrap_tensor(actor_root_state)
+        # base_pos = (root_states[env_id, :3]).cpu().numpy() + self.env_origins[env_id].cpu().numpy()
+        ## New base_pos
+        base_pos = self.root_states[env_id, :3]
+        camera_pos = camera_relative_pos + gymapi.Vec3(*base_pos)
         h1 = self.camera_handles[env_id][0]
         self.gym.set_camera_location(h1, self.envs[env_id], camera_pos, gymapi.Vec3(*base_pos))
 

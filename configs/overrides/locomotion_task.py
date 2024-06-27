@@ -5,7 +5,7 @@ from configs.definitions import (ObservationConfig, AlgorithmConfig, RunnerConfi
                                  NoiseConfig, ControlConfig, InitStateConfig, TerrainConfig,
                                  RewardsConfig, AssetConfig, CommandsConfig, TaskConfig, TrainConfig, EnvConfig, NormalizationConfig)
 from configs.overrides.terrain import FlatTerrainConfig, TrimeshTerrainConfig, RoughFlatConfig, SmoothUpslopeConfig, RoughDownslopeConfig, StairsUpConfig, StairsDownConfig, DiscreteConfig, RoughFlatHardConfig
-from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig, MoveFwdRewardsConfig
+from configs.overrides.rewards import LeggedGymRewardsConfig, WITPLeggedGymRewardsConfig, MoveFwdRewardsConfig, SimpleLeggedGymRewardsConfig
 from configs.overrides.domain_rand import NoDomainRandConfig
 from configs.overrides.noise import NoNoiseConfig
 
@@ -471,7 +471,8 @@ class PretrainLocomotionTaskConfig(TaskConfig):
     observation: ObservationConfig = ObservationConfig(
         sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
         critic_privileged_sensors=("terrain_height", "friction", "base_mass"),
-        extra_sensors=("base_quat", "yaw_rate", "z_pos")
+        extra_sensors=("base_quat", "yaw_rate", "z_pos"),
+        history_steps=1
     )
     control: ControlConfig = ControlConfig(
         clip_setpoint=True
@@ -484,14 +485,65 @@ class PretrainLocomotionTaskConfig(TaskConfig):
     )
 
 @dataclass
-class AdaptLocomotionTaskConfig(TaskConfig):
-    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
-    terrain: TerrainConfig = FlatTerrainConfig()
-    rewards: RewardsConfig = LeggedGymRewardsConfig()
+class HistoriesPretrainLocomotionTaskConfig(PretrainLocomotionTaskConfig):
     observation: ObservationConfig = ObservationConfig(
         sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
-        critic_privileged_sensors=(),
-        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos")
+        critic_privileged_sensors=("terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat", "yaw_rate", "z_pos"),
+        history_steps=4,
+        use_history_for_critic=True
+    )
+
+@dataclass
+class EvalPretrainLocomotionTaskConfig(PretrainLocomotionTaskConfig):
+    env: EnvConfig = EnvConfig(
+        num_envs=1, 
+        episode_length_s=5
+    )
+
+@dataclass
+class EvalFwdPretrainLocomotionTaskConfig(EvalPretrainLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+    rewards: SimpleLeggedGymRewardsConfig = SimpleLeggedGymRewardsConfig()
+    
+@dataclass
+class EvalHistoriesPretrainLocomotionTaskConfig(HistoriesPretrainLocomotionTaskConfig):
+    env: EnvConfig = EnvConfig(
+        num_envs=1, 
+        episode_length_s=5
+    )
+
+@dataclass
+class EvalHistoriesFwdPretrainLocomotionTaskConfig(EvalHistoriesPretrainLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+@dataclass
+class CollectPretrainLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = FlatTerrainConfig()#TrimeshTerrainConfig()#FlatTerrainConfig()
+    rewards: RewardsConfig = SimpleLeggedGymRewardsConfig()#LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=("terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat", "yaw_rate", "z_pos"),
+        history_steps=1,
+        use_history_for_critic=False
     )
     control: ControlConfig = ControlConfig(
         clip_setpoint=True
@@ -501,6 +553,78 @@ class AdaptLocomotionTaskConfig(TaskConfig):
     )
     asset: AssetConfig = AssetConfig(
         self_collisions=False,
+    )
+    env: EnvConfig = EnvConfig(
+        num_envs=40,
+        episode_length_s=5
+    )
+
+@dataclass
+class CollectFwdPretrainLocomotionTaskConfig(CollectPretrainLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+@dataclass
+class CollectHistoriesPretrainLocomotionTaskConfig(CollectPretrainLocomotionTaskConfig):
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=("terrain_height", "friction", "base_mass"),
+        extra_sensors=("base_quat", "yaw_rate", "z_pos"),
+        history_steps=4,
+        use_history_for_critic=True
+    )
+
+@dataclass
+class CollectFwdHistoriesPretrainLocomotionTaskConfig(CollectHistoriesPretrainLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+@dataclass
+class AdaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = FlatTerrainConfig()
+    rewards: RewardsConfig = SimpleLeggedGymRewardsConfig()#LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=(),
+        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos"),
+        history_steps=1
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    env: EnvConfig = EnvConfig(
+            num_envs=1,
+            episode_length_s=5,
+    )
+
+@dataclass
+class HistoriesAdaptLocomotionTaskConfig(AdaptLocomotionTaskConfig):
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=(),
+        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos"),
+        history_steps=4
     )
 
 @dataclass
@@ -511,7 +635,8 @@ class AugmentedAdaptLocomotionTaskConfig(TaskConfig):
     observation: ObservationConfig = ObservationConfig(
         sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "base_quat", "yaw_rate", "friction", "base_mass", "z_pos"),
         critic_privileged_sensors=(),
-        extra_sensors=("terrain_height",)
+        extra_sensors=("terrain_height",),
+        history_steps=1
     )
     control: ControlConfig = ControlConfig(
         clip_setpoint=True
@@ -522,7 +647,95 @@ class AugmentedAdaptLocomotionTaskConfig(TaskConfig):
     asset: AssetConfig = AssetConfig(
         self_collisions=False,
     )
+    env: EnvConfig = EnvConfig(
+            num_envs=1,
+            episode_length_s=5,
+    )
+
+
+@dataclass
+class FwdAdaptLocomotionTaskConfig(AdaptLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+
+@dataclass
+class HistoriesFwdAdaptLocomotionTaskConfig(HistoriesAdaptLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+@dataclass
+class DownhillAdaptLocomotionTaskConfig(TaskConfig):
+    _target_: str = "legged_gym.envs.a1_continual.A1Continual"
+    terrain: TerrainConfig = RoughDownslopeConfig()
+    rewards: RewardsConfig = LeggedGymRewardsConfig()
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=(),
+        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos"),
+        history_steps=1
+    )
+    control: ControlConfig = ControlConfig(
+        clip_setpoint=True
+    )
+    init_state: InitStateConfig = InitStateConfig(
+        pos=(0., 0., 0.32),
+    )
+    asset: AssetConfig = AssetConfig(
+        self_collisions=False,
+    )
+    env: EnvConfig = EnvConfig(
+            num_envs=1,
+            episode_length_s=5,
+    )
+
+@dataclass
+class DownhillHistoriesAdaptLocomotionTaskConfig(DownhillAdaptLocomotionTaskConfig):
+    observation: ObservationConfig = ObservationConfig(
+        sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action"),
+        critic_privileged_sensors=(),
+        extra_sensors=("base_quat", "yaw_rate", "terrain_height", "friction", "base_mass", "z_pos"),
+        history_steps=4
+    )
     
+@dataclass
+class DownhillFwdAdaptLocomotionTaskConfig(DownhillAdaptLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
+@dataclass
+class DownhillHistoriesFwdAdaptLocomotionTaskConfig(DownhillHistoriesAdaptLocomotionTaskConfig):
+    commands: CommandsConfig = CommandsConfig(
+        use_fixed_commands=True,
+        fixed_commands= CommandsConfig.FixedCommands(
+            lin_vel_x=0.5,
+            lin_vel_y=0.,
+            ang_vel_yaw=0.,
+            heading=0.
+        )
+    )
+
 @dataclass
 class DownhillAugmentedAdaptLocomotionTaskConfig(TaskConfig):
     _target_: str = "legged_gym.envs.a1_continual.A1Continual"
@@ -531,7 +744,8 @@ class DownhillAugmentedAdaptLocomotionTaskConfig(TaskConfig):
     observation: ObservationConfig = ObservationConfig(
         sensors=("base_lin_vel", "base_ang_vel", "projected_gravity", "commands", "motor_pos", "motor_vel", "last_action", "base_quat", "yaw_rate", "friction", "base_mass", "z_pos"),
         critic_privileged_sensors=(),
-        extra_sensors=("terrain_height",)
+        extra_sensors=("terrain_height",),
+        history_steps=1
     )
     control: ControlConfig = ControlConfig(
         clip_setpoint=True
@@ -541,6 +755,10 @@ class DownhillAugmentedAdaptLocomotionTaskConfig(TaskConfig):
     )
     asset: AssetConfig = AssetConfig(
         self_collisions=False,
+    )
+    env: EnvConfig = EnvConfig(
+            num_envs=1,
+            episode_length_s=5,
     )
 
 

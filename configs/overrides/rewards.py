@@ -21,6 +21,20 @@ class LeggedGymRewardsConfig(RewardsConfig):
 
 
 @dataclass
+class SimpleLeggedGymRewardsConfig(RewardsConfig):
+    only_positive_rewards: bool = False
+    tracking_sigma: float = 0.5 # tracking reward = exp(-error^2 / sigma^2)
+
+    # percentage of urdf limits, values above this limit are penalized
+    soft_dof_pos_limit: float = 1.0
+    
+    scales: RewardsConfig.RewardScalesConfig = RewardsConfig.RewardScalesConfig(
+        tracking_lin_vel=1.,
+        tracking_ang_vel=1.,
+    )
+
+
+@dataclass
 class WITPLeggedGymRewardsConfig(RewardsConfig):
     only_positive_rewards: bool = False
     soft_dof_pos_limit: float = 0.9

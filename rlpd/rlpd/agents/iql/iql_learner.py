@@ -75,7 +75,9 @@ class IQLLearner(Agent):
                num_qs: int = 2,
                num_min_qs: int = None,
                num_vs: int = 1,
-               num_min_vs: int = None):
+               num_min_vs: int = None,
+               use_tanh_normal: bool = False,
+               state_dependent_std: bool = False):
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, value_key = jax.random.split(rng, 4)
         actions = action_space.sample()
@@ -88,7 +90,8 @@ class IQLLearner(Agent):
                            action_dim,
                            log_std_min=math.log(0.1),
                            log_std_max=math.log(0.1),
-                           state_dependent_std=False,)
+                           state_dependent_std=state_dependent_std,
+                           squash_tanh=use_tanh_normal)
         
 
         observations = observation_space.sample()

@@ -42,6 +42,7 @@ class ObservationConfig:
     residual_sensors: Tuple[str, ...] = ("base_lin_vel", "base_ang_vel", "terrain_height")
     extra_sensors: Tuple[str, ...] = ("base_quat",)
     fast_compute_foot_pos: bool = True # if True, about 12x faster with a foot position error of 1e-5 meters
+    use_history_for_critic: bool = False ## If True, it returns (sensors+critic_privileged_sensors)*history_steps. If False, returns (sensors*history_steps) + critic_privileged_sensors
 
 @dataclass
 class TerrainConfig:
@@ -393,6 +394,7 @@ class DeploymentConfig:
 @dataclass
 class CollectionConfig:
     dataset_size: int = int(1e6)
+    history_length: int = 1
 
 @dataclass
 class EvalConfig:

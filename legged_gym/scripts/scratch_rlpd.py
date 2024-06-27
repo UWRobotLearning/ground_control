@@ -6,22 +6,20 @@ import pickle
 from dataclasses import dataclass, asdict, field
 from typing import Any, Tuple, List, Union
 import os
+import glob
 from collections import deque
 import time
 import statistics
-from PIL import Image
 import imageio
-import cv2
 
 # hydra / config related imports
 import hydra
 from hydra.core.config_store import ConfigStore
-from omegaconf import OmegaConf
-# from pydantic import TypeAdapter  ## Commented out by Mateo because this conflicts with tf_probability
+from omegaconf import OmegaConf, MISSING
 
 from configs.definitions import TaskConfig, TrainConfig, CollectionConfig, EvalConfig, EnvConfig, ObservationConfig
-from configs.overrides.locomotion_task import LocomotionTaskConfig, WITPLocomotionTaskConfig, WITPUnclippedLocomotionTaskConfig, PretrainLocomotionTaskConfig, PreadaptLocomotionTaskConfig, AdaptLocomotionTaskConfig, AugmentedAdaptLocomotionTaskConfig, DownhillAugmentedAdaptLocomotionTaskConfig
-from configs.overrides.train import RLPDSACTrainConfig, RLPDREDQTrainConfig, RLPDDroQTrainConfig, IQLAlgorithmConfig, IQLTrainConfig
+from configs.overrides.locomotion_task import PretrainLocomotionTaskConfig, HistoriesPretrainLocomotionTaskConfig, CollectPretrainLocomotionTaskConfig, CollectFwdPretrainLocomotionTaskConfig, CollectHistoriesPretrainLocomotionTaskConfig, CollectFwdHistoriesPretrainLocomotionTaskConfig, PreadaptLocomotionTaskConfig, AdaptLocomotionTaskConfig, FwdAdaptLocomotionTaskConfig, AugmentedAdaptLocomotionTaskConfig, HistoriesAdaptLocomotionTaskConfig, HistoriesFwdAdaptLocomotionTaskConfig, DownhillAugmentedAdaptLocomotionTaskConfig, DownhillAdaptLocomotionTaskConfig, DownhillFwdAdaptLocomotionTaskConfig, DownhillHistoriesAdaptLocomotionTaskConfig, DownhillHistoriesFwdAdaptLocomotionTaskConfig, EvalPretrainLocomotionTaskConfig, EvalFwdPretrainLocomotionTaskConfig, EvalHistoriesPretrainLocomotionTaskConfig, EvalHistoriesFwdPretrainLocomotionTaskConfig
+from configs.overrides.train import RLPDSACTrainConfig, RLPDREDQTrainConfig, RLPDDroQTrainConfig, IQLAlgorithmConfig, IQLPretrainConfig, IQLFinetuneConfig, SACTrainConfig, REDQTrainConfig, DroQTrainConfig, DistillConfig
 from configs.hydra import ExperimentHydraConfig
 
 from legged_gym.envs.a1_continual import A1Continual
@@ -35,7 +33,6 @@ import os
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 import pickle
-import shutil
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -43,16 +40,6 @@ import tqdm
 
 import gymnasium as gym
 import wandb
-# from absl import app, flags
-from flax.training import checkpoints
-from ml_collections import config_flags
-## TODO: should change these to come from RLPD or from our own custom path
-# from witp.rl.agents import SACLearner
-# from witp.rl.data import ReplayBuffer
-# from witp.rl.evaluation import evaluate
-# from witp.rl.wrappers import wrap_gym
-## end TODO
-import ml_collections
 from typing import Optional
 ## DELETE AFTER DEBUGGING
 # from jax import config
@@ -67,89 +54,238 @@ from flax.core import frozen_dict
 from flax.training import orbax_utils
 import orbax.checkpoint as ocp
 import optax
+from datetime import datetime
+import random
+
+import copy
+
+
+def pretrain_task_resolver(pretrain_task_str: str):
+    pretrain_task_mapping = {
+        "pretrain": PretrainLocomotionTaskConfig,
+        "pretrain_histories": HistoriesPretrainLocomotionTaskConfig
+    }
+    config_class = pretrain_task_mapping.get(pretrain_task_str)
+    if not config_class:
+        raise ValueError(f"Unsupported pretrain_task: {pretrain_task_str}")
+    return asdict(config_class())
+
+def collect_task_resolver(collect_task_str: str):
+    collect_task_mapping = {
+        "pretrain": CollectPretrainLocomotionTaskConfig,
+        "pretrain_fwd": CollectFwdPretrainLocomotionTaskConfig,
+        "pretrain_histories": CollectHistoriesPretrainLocomotionTaskConfig,
+        "pretrain_histories_fwd": CollectFwdHistoriesPretrainLocomotionTaskConfig
+    }
+    config_class = collect_task_mapping.get(collect_task_str)
+    if not config_class:
+        raise ValueError(f"Unsupported collect_task: {collect_task_str}")
+    return asdict(config_class())
+
+def pretrain_task_eval_resolver(pretrain_task_str: str):
+    pretrain_task_mapping = {
+        "pretrain": EvalPretrainLocomotionTaskConfig,
+        "pretrain_histories": EvalHistoriesPretrainLocomotionTaskConfig,
+        "pretrain_fwd": EvalFwdPretrainLocomotionTaskConfig,
+        "pretrain_histories_fwd": EvalHistoriesFwdPretrainLocomotionTaskConfig
+    }
+    config_class = pretrain_task_mapping.get(pretrain_task_str)
+    if not config_class:
+        raise ValueError(f"Unsupported pretrain_task_eval: {pretrain_task_str}")
+    return config_class()
+
+def adapt_task_resolver(adapt_task_str: str):
+    print("Inside adapt_task_resolver")
+    adapt_task_mapping = {
+        "flat": AdaptLocomotionTaskConfig,
+        "flat_augmented": AugmentedAdaptLocomotionTaskConfig,
+        "flat_histories": HistoriesAdaptLocomotionTaskConfig,
+        "flat_fwd": FwdAdaptLocomotionTaskConfig,
+        "flat_histories_fwd": HistoriesFwdAdaptLocomotionTaskConfig,
+        "downhill": DownhillAdaptLocomotionTaskConfig,
+        "downhill_augmented": DownhillAugmentedAdaptLocomotionTaskConfig,
+        "downhill_histories": DownhillHistoriesAdaptLocomotionTaskConfig,
+        "downhill_fwd": DownhillFwdAdaptLocomotionTaskConfig,
+        "downhill_histories_fwd": DownhillHistoriesFwdAdaptLocomotionTaskConfig
+    }
+    config_class = adapt_task_mapping.get(adapt_task_str)
+    if not config_class:
+        raise ValueError(f"Unsupported adapt_task: {adapt_task_str}")
+    return config_class()
+
+def adapt_train_resolver(adapt_algorithm_str: str):
+    print("Inside adapt_train_resolver")
+    adapt_algorithm_mapping = {
+        "sac": SACTrainConfig,
+        "redq": REDQTrainConfig,
+        "droq": DroQTrainConfig,
+        "iql": IQLFinetuneConfig,
+        "rlpd_sac": RLPDSACTrainConfig,
+        "rlpd_redq": RLPDREDQTrainConfig,
+        "rlpd_droq": RLPDDroQTrainConfig,
+    }
+    config_class = adapt_algorithm_mapping.get(adapt_algorithm_str)
+    if not config_class:
+        raise ValueError(f"Unsupported adapt_algorithm: {adapt_algorithm_str}")
+    return config_class()
+
+OmegaConf.register_new_resolver("pretrain_task_resolver", pretrain_task_resolver)
+OmegaConf.register_new_resolver("collect_task_resolver", collect_task_resolver)
+OmegaConf.register_new_resolver("pretrain_task_eval_resolver", pretrain_task_eval_resolver)
+OmegaConf.register_new_resolver("adapt_task_resolver", adapt_task_resolver)
+OmegaConf.register_new_resolver("adapt_train_resolver", adapt_train_resolver)
 
 @dataclass
 class ContinualScriptConfig:
     """
-    A config used with the `train_continual.py` script. Also has top-level
-    aliases for commonly used hyperparameters. Feel free to add
-    more aliases for your experiments.
+    A config for the whole continual learning loop
     """
     name: str = ""
     seed: int = 1
     torch_deterministic: bool = False
     sim_device: str = "cuda:0"
     rl_device: str = "cuda:0"
-    headless: bool = False
+    headless: bool = False#True
     checkpoint_root: str = ""
     logging_root: str = from_repo_root("../experiment_logs")
 
     ###################################################### 
-    # Pretraining
-    ###################################################### 
-
-    pretrain_task: TaskConfig = PretrainLocomotionTaskConfig()
-    pretrain_task_eval: TaskConfig = PretrainLocomotionTaskConfig(
-        env = EnvConfig(
-            num_envs=1,
-            episode_length_s=5,
-        ) 
-    )
-    pretrain_train: TrainConfig = TrainConfig()
+    # Flags and directories
+    ######################################################
+    
+    ## Pre-training
+    pretrain_task_str: str = "pretrain"  ## Supported tasks: ["pretrain", "pretrain_histories"]
+    load_pretrained: Optional[str] = "/home/mateo/projects/experiment_logs/scratch_rlpd/2024-05-01_17-30-13/pretrained.pt" ## Path to pre-trained_checkpoint, set to None if you want this script to also pretrain
     save_pretrained: bool = True
-    save_pretrained_filename: Optional[str] = "pretrained.pt" ## Copied over from "/home/mateo/projects/experiment_logs/train/2023-12-06_08-46-22/model_5000.pt"
-    load_pretrained: Optional[str] = "/home/mateo/projects/experiment_logs/scratch_rlpd/2024-05-01_17-30-13/pretrained.pt" #"/home/mateo/projects/experiment_logs/scratch_rlpd/2024-04-30_13-34-57/pretrained.pt" ##"/home/mateo/projects/experiment_logs/train/2023-12-06_08-46-22/model_5000.pt" ## "pretrained.pt" ## Path to pre-trained_checkpoint
+    save_pretrained_filename: Optional[str] = "pretrained.pt" 
 
-    ###################################################### 
-    # Adapt
-    ###################################################### 
+    ## Eval
+    pretrain_task_eval_str: str = "pretrain_fwd"  ## Supported tasks: ["pretrain", "pretrain_histories", "pretrain_fwd", "pretrain_histories_fwd"]
 
-    preadapt_collection: CollectionConfig = CollectionConfig(
-        dataset_size=int(1e6)
-    )
-
-    adapt_task_pretrain_obs: TaskConfig = DownhillAugmentedAdaptLocomotionTaskConfig(#AdaptLocomotionTaskConfig(
-        env=EnvConfig(
-            num_envs=1,
-            episode_length_s=5
-        ),
-        observation=pretrain_task.observation
-    )
-
-    adapt_task_adapt_obs: TaskConfig = DownhillAugmentedAdaptLocomotionTaskConfig(#AdaptLocomotionTaskConfig(
-        env=EnvConfig(
-            num_envs=1,
-            episode_length_s=5
-        )
-    )
-
-
-    offline_finetuning: IQLTrainConfig = IQLTrainConfig()
-
-    # adapt_train: RLPDSACTrainConfig = RLPDSACTrainConfig()
-    # adapt_train: RLPDREDQTrainConfig = RLPDREDQTrainConfig()
-    adapt_train: RLPDDroQTrainConfig = RLPDDroQTrainConfig()
-
+    ## Data collection after pre-training
+    collect_task_str: str = "pretrain"  ## Supported tasks: ["pretrain", "pretrain_fwd", "pretrain_histories", "pretrain_histories_fwd"]. By default, all options store 4 timesteps of hsitories
+    load_preadapt_buffer: Optional[str] = "/home/mateo/projects/experiment_logs/featured/expert_data_fwd/expert_preadapt_buffer.pkl" #"/home/mateo/projects/experiment_logs/featured/merged_checkpoint_data_fwd/merged_checkpoint_data.pkl" ## Path to pre-collected_checkpoint, set to None if you want this script to also collect data
     save_preadapt_buffer: bool = True
-    save_preadapt_filename: Optional[str] = "preadapt_buffer.pkl"
-    load_preadapt_buffer: Optional[str] = "/home/mateo/projects/experiment_logs/scratch_rlpd/2024-05-14_14-46-38/preadapt_buffer.pkl" #"/home/mateo/projects/experiment_logs/scratch_rlpd/2024-04-25_15-56-20/preadapt_buffer.pkl" #"/home/mateo/projects/experiment_logs/train_continual/2024-04-21_20-09-56/preadapt_buffer.pkl"  ## Path to pre-collected_checkpoint
+    save_preadapt_filename: Optional[str] = "expert_preadapt_buffer.pkl"
+
+    ## Offline pre-training
+    pretrain_offline: bool = False
+
+    ## Adaptation
+    adapt_task_str: str = "flat_fwd"  ## Supported tasks: ["flat", "flat_augmented", "flat_histories", "flat_fwd", "flat_histories_fwd", "downhill", "downhill_augmented", "downhill_histories", "downhill_fwd", "downhill_histories_fwd"]
+    adapt_algorithm_str: str = "rlpd_droq"  ## Supported algorithms: ["sac", "redq", "droq", "iql", "rlpd_sac", "rlpd_redq", "rlpd_droq"]
+    initialize_online_buffer: bool = False#True
+    init_buffer_path: Optional[str] = None#"/home/mateo/projects/experiment_logs/checkpoints_and_data/expert_data/expert_preadapt_buffer.pkl"
+
     save_adapt_buffer: bool = True
     save_adapt_buffer_dir: Optional[str] = "buffers"
     save_adapt_agent: bool = True
     save_adapt_agent_dir: Optional[str] = "agents"
+
+
+    ###################################################### 
+    # Configs for pre-training
+    ###################################################### 
+
+    # pretrain_task: TaskConfig = PretrainLocomotionTaskConfig()
+    # pretrain_task_eval: TaskConfig = PretrainLocomotionTaskConfig(
+    #     env = EnvConfig(
+    #         num_envs=1,
+    #         episode_length_s=5,
+    #     ) 
+    # )
+    pretrain_task: Any = "${oc.create: ${pretrain_task_resolver: ${pretrain_task_str}}}"  
+    pretrain_task_eval: Any = "${oc.create: ${pretrain_task_eval_resolver: ${pretrain_task_eval_str}}}"
+    pretrain_train: TrainConfig = TrainConfig()
+
+    ###################################################### 
+    # Configs for data collection after pre-training
+    ###################################################### 
+
+    collect_pretrain_task: Any = "${oc.create: ${collect_task_resolver: ${collect_task_str}}}"
+
+    preadapt_collection: CollectionConfig = CollectionConfig(
+        dataset_size=int(1e6),
+        history_length=1  ## TODO: This needs to be automatically populated given collect_pretrain_task 
+    )
+
+    individual_checkpoint_collection: CollectionConfig = CollectionConfig(
+        dataset_size=int(1e5),
+        history_length=1  ## TODO: This needs to be automatically populated given collect_pretrain_task
+    )
+
+    ###################################################### 
+    # Configs for offline pre-training
+    ######################################################
+
+    pretrain_offline: bool = False
+    offline_pretraining: IQLPretrainConfig = IQLPretrainConfig()
+
+    ###################################################### 
+    # Configs for adaptation
+    ###################################################### 
+
+    
+    adapt_task: Any = "${oc.create: ${adapt_task_resolver: ${adapt_task_str}}}"
+    adapt_train: Any = "${oc.create: ${adapt_train_resolver: ${adapt_algorithm_str}}}"
+
+    # adapt_task_pretrain_obs: TaskConfig = DownhillAugmentedAdaptLocomotionTaskConfig(#AdaptLocomotionTaskConfig(
+    #     observation=pretrain_task.observation
+    # )
+
+    ###################################################### 
+    # Configs for data collection after adapting
+    ###################################################### 
+
     adapt_collection: CollectionConfig = CollectionConfig(
         dataset_size=int(1e4)
     )
 
+    ###################################################### 
+    # Configs for evaluation
+    ###################################################### 
+
     eval: EvalConfig = EvalConfig()
 
-    hydra: ExperimentHydraConfig = ExperimentHydraConfig() ## TODO: is this necessary?
+    ###################################################### 
+    # Configs for evaluation
+    ######################################################
 
+    distill: DistillConfig = DistillConfig() 
+
+    hydra: ExperimentHydraConfig = ExperimentHydraConfig() ## TODO: is this necessary?
+    
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=ContinualScriptConfig)
+## Let's you select different options in command line: e.g. python scratch_rlpd.py +pretrain_task=pretrain_histories
+# cs.store(group="pretrain_task", name="pretrain", node=PretrainLocomotionTaskConfig)
+# cs.store(group="pretrain_task", name="pretrain_histories", node=HistoriesPretrainLocomotionTaskConfig)
 
+# cs.store(group="pretrain_task_eval", name="pretrain", node=EvalPretrainLocomotionTaskConfig)
+# cs.store(group="pretrain_task_eval", name="pretrain_histories", node=EvalHistoriesPretrainLocomotionTaskConfig)
 
+# cs.store(group="adapt_task", name="flat", node=AdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="flat_augmented", node=AugmentedAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="flat_histories", node=HistoriesAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill", node=DownhillAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill_augmented", node=DownhillAugmentedAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill_histories", node=DownhillHistoriesAdaptLocomotionTaskConfig)
+
+# cs.store(group="adapt_task", name="flat", node=AdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="flat_augmented", node=AugmentedAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="flat_histories", node=HistoriesAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill", node=DownhillAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill_augmented", node=DownhillAugmentedAdaptLocomotionTaskConfig)
+# cs.store(group="adapt_task", name="downhill_histories", node=DownhillHistoriesAdaptLocomotionTaskConfig)
+
+# cs.store(group="adapt_train", name="sac", node=SACTrainConfig)
+# cs.store(group="adapt_train", name="redq", node=REDQTrainConfig)
+# cs.store(group="adapt_train", name="droq", node=DroQTrainConfig)
+# cs.store(group="adapt_train", name="iql", node=IQLFinetuneConfig)
+# cs.store(group="adapt_train", name="rlpd_sac", node=RLPDSACTrainConfig)
+# cs.store(group="adapt_train", name="rlpd_redq", node=RLPDREDQTrainConfig)
+# cs.store(group="adapt_train", name="rlpd_droq", node=RLPDDroQTrainConfig)
 
 ################################################################################
 ## TODO: All functions in this block should be moved to utils
@@ -178,6 +314,7 @@ def insert_batch_into_replay_buffer(replay_buffer, observations, actions, reward
                  dones=dones[i],
                  next_observations=next_observations[i],
                  observation_labels=observation_labels))
+
         
 def combine(one_dict, other_dict):
     combined = {}
@@ -212,7 +349,6 @@ def obs_to_nn_input(observation):
     if isinstance(observation, torch.Tensor):
         observation = observation.detach().cpu().numpy()
     obs = observation.squeeze()
-    # obs = jax.device_put(obs, jax.devices()[1])
 
     return obs
 
@@ -229,7 +365,6 @@ def action_to_env_input(action):
 
 
 def create_gif_from_numpy_array(frames_array, filename, fps=10):
-    # OpenCV expects the dimensions to be (height, width) instead of (width, height)
     frames_array = frames_array.transpose(0, 2, 3, 1)
     frames_list = [frame for frame in frames_array]
     imageio.mimwrite(filename, frames_list)
@@ -279,6 +414,7 @@ def clip_action(action: Union[np.array, torch.Tensor], action_space: gym.spaces.
         return torch.clip(action, low, high)
     return np.clip(action, low, high)
 
+
 ################################################################################
 
 
@@ -288,24 +424,25 @@ def pretrain(train_cfg, env, runner):
     log.info("Done pre-training")
     return runner.get_inference_policy(device=env.device), runner.alg.actor_critic
 
-def collect(task_cfg, env, policy, dataset_size, obs_processor=lambda x: x, action_processor=lambda x: x, nn_normalized_actions=True):  ## TODO: task_cfg could be replaced by collect config
+def collect(collect_cfg, env, policy, obs_processor=lambda x: x, action_processor=lambda x: x, nn_normalized_actions=True):  ## TODO: task_cfg could be replaced by collect config
     '''
     if nn_normalized_actions=True, this means that the actions returned by policy(obs) will be in the range [-1, 1]
     '''
     log.info("Collecting")
     
     ## Initialize Replay Buffer
-    replay_buffer = ReplayBuffer(env.observation_space, env.action_space, capacity=dataset_size, next_observation_space=env.observation_space, observation_labels=env.observation_labels)
+    replay_buffer = ReplayBuffer(env.observation_space, env.action_space, capacity=collect_cfg.dataset_size, next_observation_space=env.observation_space, observation_labels=env.observation_labels)
     ## Reset environment
     env.reset()
-    obs = env.get_observations()
-    critic_obs = env.get_critic_observations()
-    extra_obs = env.get_extra_observations()
+    # import ipdb;ipdb.set_trace()
+    obs = env.get_observations(1)
+    critic_obs = env.get_critic_observations(collect_cfg.history_length)
+    extra_obs = env.get_extra_observations(collect_cfg.history_length)
 
     obs_processed = obs_processor(obs.detach())
 
     current_time = time.time()
-    while len(replay_buffer) < dataset_size:
+    while len(replay_buffer) < collect_cfg.dataset_size:
         raw_actions = policy(obs_processed)
         if nn_normalized_actions:  ## This means action came from an SAC++ policy
             unnormalized_actions = unnormalize_action(raw_actions, env.action_space)
@@ -316,7 +453,11 @@ def collect(task_cfg, env, policy, dataset_size, obs_processor=lambda x: x, acti
             unnormalized_actions = unnormalized_actions.detach()
         actions_processed = action_processor(unnormalized_actions)  ## This is here to interface between pytorch and numpy, to make sure actions are always torch tensors when they go into env
         new_obs, new_critic_obs, rewards, dones, infos, *_ = env.step(actions_processed)
-        new_extra_obs = env.get_extra_observations()
+        ## Hacky override to get a specific amount of steps:
+        new_obs = env.get_observations(1)
+        new_critic_obs = env.get_critic_observations(collect_cfg.history_length)
+        ## end of hacky override
+        new_extra_obs = env.get_extra_observations(collect_cfg.history_length)
         duration = time.time() - current_time
         if duration < env.dt:
             time.sleep(env.dt - duration)
@@ -423,8 +564,8 @@ def evaluate(eval_cfg, env, policy, obs_processor=lambda x: x, action_processor=
                 ep_scene_images_stacked = np.stack(ep_scene_images, axis=0)
                 ep_fpv_images_stacked = np.stack(ep_fpv_images, axis=0)
 
-                wandb.log({"video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=ep_counter)
-                wandb.log({"video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=ep_counter)
+                wandb.log({"eval/video/scene": wandb.Video(ep_scene_images_stacked, fps=10)}, step=ep_counter)
+                wandb.log({"eval/video/fpv": wandb.Video(ep_fpv_images_stacked, fps=10)}, step=ep_counter)
             
             current_reward_sum = 0
             current_episode_length = 0
@@ -467,7 +608,6 @@ def offline_pretrain(adapt_cfg, env, agent, data):
             offline_batch = dict(offline_batch)
             offline_batch.pop("observation_labels")
             offline_batch = frozen_dict.freeze(offline_batch)
-
         agent, update_info = agent.update(offline_batch)
 
         if i % adapt_cfg.log_interval == 0:
@@ -478,7 +618,9 @@ def offline_pretrain(adapt_cfg, env, agent, data):
     log.info("Done Offline Pre-training with IQL")
     return agent.eval_actions, agent
 
-def adapt(adapt_cfg, env, agent, data, use_utd=True):
+def adapt(adapt_cfg, env, agent, data, use_utd=True, initialized_buffer=None):
+    init_actor_params = agent.actor.params
+    init_critic_params = agent.critic.params
     ## Initialize WandB
     if adapt_cfg.name == "":
         wandb.init(project=adapt_cfg.project_name)
@@ -494,9 +636,12 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
     # Set up replay buffer
     start_i = 0
     ep_counter = 0
-    replay_buffer = ReplayBuffer(env.actor_observation_space, env.action_space,
-                                    adapt_cfg.max_steps, next_observation_space=env.actor_observation_space,
-                                    observation_labels=env.actor_labels)
+    if initialized_buffer is not None:
+        replay_buffer = initialized_buffer
+    else:
+        replay_buffer = ReplayBuffer(env.actor_observation_space, env.action_space,
+                                        adapt_cfg.max_steps, next_observation_space=env.actor_observation_space,
+                                        observation_labels=env.actor_labels)
     replay_buffer.seed(adapt_cfg.seed)
 
     # Set up offline dataset
@@ -557,7 +702,6 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
     if adapt_cfg.pretrain_steps > 0:
         log.info("Done offline pre-training")
 
-
     observation, _ = env.reset()
     done = False
 
@@ -566,13 +710,14 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
 
     log.info("3. Now Training")
 
-    ## Set up linear schedule for offline ratio
-    offline_ratio_schedule_fn = optax.linear_schedule(
-        init_value=1., 
-        end_value=0,
-        transition_steps=adapt_cfg.max_steps,
-        transition_begin=adapt_cfg.start_training
-        )
+    if adapt_cfg.use_offline_ratio_schedule:
+        ## Set up linear schedule for offline ratio
+        offline_ratio_schedule_fn = optax.linear_schedule(
+            init_value=1., 
+            end_value=0,
+            transition_steps=adapt_cfg.max_steps,
+            transition_begin=adapt_cfg.start_training
+            )
 
     for i in tqdm.tqdm(range(start_i, adapt_cfg.max_steps),
                        smoothing=0.1,
@@ -581,7 +726,7 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
         start = time.time()
         observation = obs_to_nn_input(observation)
 
-        ## TODO: Mateo: Remove
+        ## TODO: Mateo: Instead of doing random sampling to fill out buffer, I'm just sampling form the initial policy. If the policy that's passed in is pre-trained, then I just sample form that directly. If it's not pre=trained, then sampling from this policy is similar to doing random sampling.
         normalized_action, agent = agent.sample_actions(observation)
         unnormalized_action = unnormalize_action(normalized_action, env.action_space)
         ## end TODO: uncomment below
@@ -634,10 +779,12 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
 
         # Track learning time
         start = stop
-        offline_ratio_value = offline_ratio_schedule_fn(i)
-        ## This clause will largely be the same!
+        if adapt_cfg.use_offline_ratio_schedule:
+            offline_ratio_value = offline_ratio_schedule_fn(i)
+        else:
+            offline_ratio_value = adapt_cfg.offline_ratio
+
         if i >= adapt_cfg.start_training:
-            # import ipdb;ipdb.set_trace()
             assert isinstance(adapt_cfg.utd_ratio, int)
             online_batch = replay_buffer.sample(
                 # adapt_cfg.utd_ratio * int(adapt_cfg.batch_size * (1 - adapt_cfg.offline_ratio))
@@ -657,9 +804,15 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
 
             # assert (np.all(batch['actions'] <= 1)) and (np.all(batch['actions'] <= 1)), "Actions going into network are NOT normalized"  ## Note: this will cause issues
             if use_utd:
-                agent, update_info = agent.update(offline_batch, adapt_cfg.utd_ratio)
+                if adapt_cfg.action_soft_range is not None:
+                    output_range_low = jnp.array(env.action_space.low * adapt_cfg.action_soft_range)
+                    output_range_high = jnp.array(env.action_space.high * adapt_cfg.action_soft_range)
+                    output_range = (output_range_low, output_range_high)
+                else:
+                    output_range = None
+                agent, update_info = agent.update(batch, adapt_cfg.utd_ratio, output_range=output_range)
             else:
-                agent, update_info = agent.update(offline_batch)
+                agent, update_info = agent.update(batch)
 
             stop = time.time()
             learn_time = stop - start
@@ -702,23 +855,37 @@ def adapt(adapt_cfg, env, agent, data, use_utd=True):
             ep_counter += 1
         wandb_counter += 1
 
+        ## Parameter resets
+        if (adapt_cfg.reset_param_interval is not None) and (i > 0) and (i % adapt_cfg.reset_param_interval == 0):
+            import ipdb;ipdb.set_trace()
+            if adapt_cfg.reset_actor:
+                agent = agent.reset_actor(adapt_cfg.seed, env.actor_observation_space, env.action_space, **dict(adapt_cfg.algorithm))
+            if adapt_cfg.reset_critic:
+                agent = agent.reset_critic(adapt_cfg.seed, env.actor_observation_space, env.action_space, **dict(adapt_cfg.algorithm))
+            if (adapt_cfg.reset_actor is False) and (adapt_cfg.reset_critic is False):
+                print("WARNING: reset_param_interval is not None but both reset_actor and reset_critic are False")
+
     wandb.finish()
 
     return agent.eval_actions, agent
 
 
-def distill(distillation_data, agent):
-    ## All the following parameters should go in a config
-    lr = 3e-4
-    num_epochs = 1
-    batch_size = 256
-    seed = 42
-    ## end of parameters that should go in a config
+def distill(distill_cfg, env, agent, data):
+    ## Initialize WandB
+    if distill_cfg.name == "":
+        wandb.init(project=distill_cfg.project_name)
+    else:
+        wandb.init(project=distill_cfg.project_name, name=distill_cfg.name)
+    wandb_cfg_dict = dict(distill_cfg)
+    wandb.config.update(wandb_cfg_dict)
+    wandb_counter = 0
 
-    key = jax.random.key(seed)
-    dataset_size = distillation_data["observations"].shape[0]
+    key = jax.random.PRNGKey(distill_cfg.seed)
+    key2 = jax.random.PRNGKey(distill_cfg.seed)
+    dataset_size = len(data) ## distillation_data_dict["observations"].shape[0]
+    distillation_data_dict = data.sample_select(dataset_size, env.actor_labels)
 
-    num_batches = int(np.ceil(dataset_size / batch_size))
+    num_batches = int(np.ceil(dataset_size / distill_cfg.batch_size))
 
     @jax.jit
     def mse(params, x_batched, y_batched):
@@ -731,28 +898,97 @@ def distill(distillation_data, agent):
         # Vectorize single sample version
         return jnp.mean(jax.vmap(squared_error)(x_batched, y_batched), axis=0)
     
-    tx = optax.adam(learning_rate=lr)
+    tx = optax.adam(learning_rate=distill_cfg.lr)
     opt_state = tx.init(agent.actor.params)
     loss_grad_fn = jax.value_and_grad(mse)
 
-    import ipdb;ipdb.set_trace()
+    start_end_idxs = jnp.array([[batch_num*distill_cfg.batch_size, min(batch_num*distill_cfg.batch_size+distill_cfg.batch_size, dataset_size)] for batch_num in range(num_batches)])
     ## Make distillation data into batches
-    for epoch in range(num_epochs):
-        for batch_num in range(num_batches):
-            start_idx = batch_num*batch_size
-            end_idx = min(batch_num*batch_size+batch_size, dataset_size)
-            batch_obs = distillation_data["observations"][start_idx:end_idx, :]
-            batch_actions = distillation_data["actions"][start_idx:end_idx, :]
+    for epoch in range(distill_cfg.num_epochs):
+        key2, rng2 = jax.random.split(key2)
+        batch_order = jax.random.permutation(key2, start_end_idxs)
+        pbar = tqdm.tqdm(batch_order, smoothing=0.1, total=num_batches)
+
+        for start_end_idx in pbar:
+            key, rng = jax.random.split(key)  ## Unsure if I am using this right
+            batch_obs = distillation_data_dict["observations"][start_end_idx[0]:start_end_idx[1], :]
+            batch_actions = distillation_data_dict["actions"][start_end_idx[0]:start_end_idx[1], :]
             loss_val, grads = loss_grad_fn(agent.actor.params, batch_obs, batch_actions)
             updates, opt_state = tx.update(grads, opt_state)
-            agent.actor.params = optax.apply_updates(agent.actor.params, updates)  ## TODO: Failing, need to unfreeze the TrainState but not sure how
+            params = optax.apply_updates(agent.actor.params, updates)  ## TODO: Failing, need to unfreeze the TrainState but not sure how
+            new_actor = agent.actor.replace(params=params)
+            agent = agent.replace(actor=new_actor, rng=rng)
+            pbar.set_postfix(loss=f"{loss_val:0.3f}")
 
-            if batch_num % 1 == 0:
-                print(f"Loss at epoch {epoch}, batch {batch_num}/{num_batches} = {loss_val}")
+            if wandb_counter % distill_cfg.log_interval == 0:
+                wandb.log({f'training/loss': loss_val}, step=wandb_counter)
+                wandb.log({f'training/epoch': epoch}, step=wandb_counter)
+            wandb_counter += 1
 
-    return agent
+    wandb.finish()
+    return agent.eval_actions, agent
 
+def collect_multi_checkpoint(collect_cfg, env, runner, checkpoints_dir, obs_processor=lambda x: x, action_processor=lambda x: x, nn_normalized_actions=True):  ## TODO: task_cfg could be replaced by collect config
+    '''
+    if nn_normalized_actions=True, this means that the actions returned by policy(obs) will be in the range [-1, 1]
+    '''
+    log.info("Collecting")
 
+    pattern = os.path.join(checkpoints_dir, 'model*.pt')
+    checkpoints = sorted(glob.glob(pattern))
+    
+    # Uncomment to run collect with all checkpoints (aka NOT load from folder  )
+    datasets = []
+    for checkpoint in checkpoints:
+        log.info(f"Collecting data form checkpoint {checkpoint}")
+        runner.load(checkpoint)
+        pretrained_policy  = runner.get_inference_policy(device=env.device)
+        pretrained_model = runner.alg.actor_critic
+
+        agent = pretrained_policy 
+        checkpoint_data = collect(collect_cfg, env, agent, obs_processor=obs_processor, action_processor=action_processor, nn_normalized_actions=nn_normalized_actions)
+        
+        filename = os.path.splitext(os.path.basename(checkpoint))[0]
+
+        with open(f"{filename}_preadapt_buffer_{len(checkpoint_data)}.pkl", 'wb') as f:
+            pickle.dump(checkpoint_data, f)
+
+        datasets.append(checkpoint_data)
+
+    # # Uncomment to load datasets from folder
+    # datasets_dir = "/home/mateo/projects/experiment_logs/featured/data_from_most_checkpoints_fwd"
+    # pattern = os.path.join(datasets_dir, 'model*.pkl')
+    # dataset_files = sorted(glob.glob(pattern))
+    # datasets = []
+    # for dataset_file in dataset_files:
+    #     log.info(f"Loading data from checkpoint {dataset_file}")
+    #     with open(dataset_file, 'rb') as f:
+    #         dataset = pickle.load(f)
+    #     datasets.append(dataset)
+    
+
+    ## Merge datasets into a single ReplayBuffer
+    all_datasets_capacity = collect_cfg.dataset_size * len(datasets)
+    replay_buffer = ReplayBuffer(env.observation_space, env.action_space, capacity=all_datasets_capacity, next_observation_space=env.observation_space, observation_labels=env.observation_labels)
+
+    merged_dataset_dict = datasets[0].dataset_dict
+    num_datasets = len(datasets)
+    for i in range(1, num_datasets):
+        log.info(f"Merging data from buffer {i}")
+        merged_dataset_dict = combine(merged_dataset_dict, datasets[i].dataset_dict)
+        datasets[i] = None
+    assert merged_dataset_dict["observations"].shape[0] == all_datasets_capacity, "size of dataset_dict should be equal to all_datasets_capacity"
+    log.info(f"Done merging dicts, now replacing dict in ReplayBuffer")
+    replay_buffer.dataset_dict = merged_dataset_dict
+    replay_buffer._size = all_datasets_capacity
+    replay_buffer._capacity = all_datasets_capacity
+    replay_buffer._insert_index = (replay_buffer._capacity + 1) % replay_buffer._capacity
+    log.info(f"Done setting up ReplayBuffer, dumping now")
+
+    with open("merged_checkpoint_data.pkl", 'wb') as f:
+        pickle.dump(replay_buffer, f)
+
+    return replay_buffer
 
 @hydra.main(version_base=None, config_name="config")  
 def main(cfg: ContinualScriptConfig) -> None:  
@@ -762,15 +998,15 @@ def main(cfg: ContinualScriptConfig) -> None:
     save_config_as_yaml_continual(cfg)
     set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
 
-    datasets = []
+    # datasets = []
 
-    ############################################################ 
-    # Pre-training stage: Pre-train or load checkpoint
-    #   1. Set up environment
-    #   2. Set up task (aka reward function)
-    #   3. Set up agent
-    #   4. Train agent with PPO 
-    ############################################################
+    # ############################################################ 
+    # # Pre-training stage: Pre-train or load checkpoint
+    # #   1. Set up environment
+    # #   2. Set up task (aka reward function)
+    # #   3. Set up agent
+    # #   4. Train agent with PPO 
+    # ############################################################
 
     log.info("Initializing pre-training")
     env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task)  ## Note: env and runner are explicitly initialized outside of pretrain() so that it's explicit which environment we are using and which runner
@@ -788,18 +1024,17 @@ def main(cfg: ContinualScriptConfig) -> None:
     env.exit()
     log.info("Done with pre-training")
 
-    ############################################################ 
-    # Pre-training stage: Data collection w/ adaptation config
-    #   1. Change reward function to match finetuning reward
-    #   2. Change observation space to match finetuning obs
-    #   3. Collect data of pre-trained agent w/ new reward and 
-    #      observations  
-    ############################################################
-
+    # ############################################################ 
+    # # Pre-training stage: Data collection w/ adaptation config
+    # #   1. Change reward function to match finetuning reward
+    # #   2. Change observation space to match finetuning obs
+    # #   3. Collect data of pre-trained agent w/ new reward and 
+    # #      observations  
+    # ############################################################
     if not cfg.load_preadapt_buffer:
-        env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task)
+        env: A1Continual = hydra.utils.instantiate(cfg.collect_pretrain_task)
         agent = pretrained_policy 
-        preadapt_data = collect(cfg.pretrain_task, env, agent, cfg.preadapt_collection.dataset_size, nn_normalized_actions=False)
+        preadapt_data = collect(cfg.preadapt_collection, env, agent, nn_normalized_actions=False)
         if cfg.save_preadapt_buffer:
             with open(cfg.save_preadapt_filename, 'wb') as f:
                 pickle.dump(preadapt_data, f)
@@ -808,65 +1043,96 @@ def main(cfg: ContinualScriptConfig) -> None:
         with open(cfg.load_preadapt_buffer, 'rb') as f:
             preadapt_data = pickle.load(f)
 
-    datasets.append(preadapt_data)
+    # # Data collection over all checkpoints. Should only be ran once to actually collect data, and save into a merged replay_buffer, than then gets loaded form disk.
+    # # env: A1Continual = hydra.utils.instantiate(cfg.collect_pretrain_task)
+    # # checkpoints_dir = os.path.dirname(cfg.load_pretrained)
+    # # preadapt_data = collect_multi_checkpoint(cfg.individual_checkpoint_collection, env, runner, checkpoints_dir, nn_normalized_actions=False)
+    # # env.exit()
 
-    ############################################################ 
+    # ########################################################### 
     # Pre-training stage: Evaluate policy
     #   1. Evaluate pre-trained agent w/ new reward in pretrain 
     #      environment
     #   2. Evaluate pre-trained agent w/new reward in new
     #      environment
-    ############################################################
+    # ###########################################################
 
-    # env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task_eval)
-    # preadapt_stats = evaluate(cfg.eval, env, pretrained_policy, nn_normalized_actions=False)
-    # log.info(f"Pre-trained policy in original terrain has stats: {preadapt_stats}")
-    # env.exit()
-
-    ############################################################
-    # Offline Training Task
-    ############################################################
-    env: A1Continual = hydra.utils.instantiate(cfg.adapt_task_adapt_obs)
-    agent = IQLLearner.create(cfg.offline_finetuning.seed, env.actor_observation_space,
-                            env.action_space, **dict(cfg.offline_finetuning.algorithm))
-    offline_pretrained_policy, offline_pretrained_model = offline_pretrain(cfg.offline_finetuning, env, agent, preadapt_data)
-    env.exit()
-
-    env: A1Continual = hydra.utils.instantiate(cfg.adapt_task_adapt_obs)
-    preadapt_stats = evaluate(cfg.eval, env, offline_pretrained_policy, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
+    env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task_eval)
+    cfg.eval.name = f"pretrain_{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}"
+    preadapt_stats = evaluate(cfg.eval, env, pretrained_policy, nn_normalized_actions=False)
     log.info(f"Pre-trained policy in original terrain has stats: {preadapt_stats}")
     env.exit()
 
-    ############################################################
-    # Adaptation Task
-    ############################################################
+    # ############################################################
+    # # Offline Training Task
+    # ############################################################
+    env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    iql_agent = IQLLearner.create(cfg.offline_pretraining.seed, env.actor_observation_space,
+                            env.action_space, **dict(cfg.offline_pretraining.algorithm))
+    sac_agent = SACLearner.create(cfg.adapt_train.seed, env.actor_observation_space,
+                        env.action_space, **dict(cfg.adapt_train.algorithm))
+    # if cfg.pretrain_offline:
+    #     offline_pretrained_policy, iql_agent = offline_pretrain(cfg.offline_pretraining, env, agent, preadapt_data)
+    #     env.exit()
 
-    ## Adaptation with IQL
-
-    env: A1Continual = hydra.utils.instantiate(cfg.adapt_task_adapt_obs)
-    # agent = IQLLearner.create(cfg.offline_finetuning.seed, env.actor_observation_space,
-                            # env.action_space, **dict(cfg.offline_finetuning.algorithm))
-    # offline_pretrained_policy, offline_pretrained_model = offline_pretrain(cfg.offline_finetuning, env, agent, preadapt_data)
-    ## Figure out whether either of offline_pretrained_policy or offline_pretrained_model are agents, if not, I can initialize similar to how I use initialize_pretrained_params for SACLearner
-    adapt_policy, adapt_model = adapt(cfg.adapt_train, env, offline_pretrained_model, preadapt_data, use_utd=False)
+    #     env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    #     cfg.eval.name = f"Offline_IQL_{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}"
+    #     preadapt_stats = evaluate(cfg.eval, env, offline_pretrained_policy, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
+    #     log.info(f"Pre-trained policy in original terrain has stats: {preadapt_stats}")
     env.exit()
 
-    ## End of adaptation with IQL
+    # # ############################################################
+    # # # Adaptation Task
+    # # ############################################################
 
-    # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task_adapt_obs)
-    # agent = SACLearner.create(cfg.adapt_train.seed, env.actor_observation_space,
-    #                         env.action_space, **dict(cfg.adapt_train.algorithm))
-    # ## Initialize with pre-trained parameters. TODO There is still a mismatch in that pretraining does not use tanh squashed (this returns nans), whereas adaptation does, there is also a mismatch in whether state_dependent_std is used or not.
-    # agent = agent.initialize_pretrained_params(offline_pretrained_model.actor.params, offline_pretrained_model.critic.params)
-    
-    # log.info(f"Evaluating IQL pre-training on SAC network")
-    # offline_initialized_states = evaluate(cfg.eval, env, agent.eval_actions, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
-    # log.info(f"Offline initialized policy in original terrain has stats: {offline_initialized_states}")
+    # ## Adaptation
+    # print(f"Before adaptation")
+    # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    # if cfg.adapt_algorithm_str == "iql":
+    #     agent = iql_agent
+    #     use_utd = False
+    #     sac_agent = None
+    # else:
+    #     agent = sac_agent
+    #     use_utd = True
+    #     iql_agent = None
+
+    # if cfg.initialize_online_buffer:
+    #     if not (os.path.samefile(cfg.load_preadapt_buffer, cfg.init_buffer_path)):
+    #         with open(cfg.init_buffer_path, 'rb') as f:
+    #             initialized_online_buffer = pickle.load(f)
+    #     else:
+    #         initialized_online_buffer = copy.deepcopy(preadapt_data)
+    #         filtered_samples = initialized_online_buffer.sample_select(len(initialized_online_buffer), include_labels=list(env.actor_labels.keys()))
+    #     initialized_online_buffer.dataset_dict = dict(filtered_samples)
+    # else:
+    #     initialized_online_buffer = None
+
+    # adapt_policy, adapt_model = adapt(cfg.adapt_train, env, agent, preadapt_data, use_utd=use_utd, initialized_buffer=initialized_online_buffer)
     # env.exit()
 
-    # log.info(f"Training with RLPD!")
-    # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task_adapt_obs)
-    # adapt_policy, adapt_model = adapt(cfg.adapt_train, env, agent, preadapt_data)
+    # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    # cfg.eval.name = f"Online_{cfg.adapt_algorithm_str}_{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}"
+    # adapt_stats = evaluate(cfg.eval, env, adapt_policy, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
+    # log.info(f"Fine-tuned policy in original terrain has stats: {adapt_stats}")
+    # env.exit()
+
+    # # ## End of adaptation with IQL
+
+    # # # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    # # # agent = SACLearner.create(cfg.adapt_train.seed, env.actor_observation_space,
+    # # #                         env.action_space, **dict(cfg.adapt_train.algorithm))
+    # # # ## Initialize with pre-trained parameters. TODO There is still a mismatch in that pretraining does not use tanh squashed (this returns nans), whereas adaptation does, there is also a mismatch in whether state_dependent_std is used or not.
+    # # # agent = agent.initialize_pretrained_params(offline_pretrained_model.actor.params, offline_pretrained_model.critic.params)
+    
+    # # # log.info(f"Evaluating IQL pre-training on SAC network")
+    # # # offline_initialized_states = evaluate(cfg.eval, env, agent.eval_actions, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
+    # # # log.info(f"Offline initialized policy in original terrain has stats: {offline_initialized_states}")
+    # # # env.exit()
+
+    # # # log.info(f"Training with RLPD!")
+    # # # env: A1Continual = hydra.utils.instantiate(cfg.adapt_task)
+    # # # adapt_policy, adapt_model = adapt(cfg.adapt_train, env, agent, preadapt_data)
 
     # if cfg.save_adapt_agent:
     #     ## Setting up Orbax checkpointer to save JAX models
@@ -877,10 +1143,33 @@ def main(cfg: ContinualScriptConfig) -> None:
     #     cfg.save_adapt_agent_dir, orbax_checkpointer, options)
     #     checkpoint_manager.save(0, adapt_model, save_kwargs={'save_args': save_args})
     
-    # env.exit()
+    # # # env.exit()
     
-    # del adapt_policy
-    # del adapt_model
+    # # # del adapt_policy
+    # # # del adapt_model
+
+    ############################################################
+    # Distillation
+    ############################################################
+    env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task)
+    sac_agent = SACLearner.create(cfg.adapt_train.seed, env.actor_observation_space,
+                        env.action_space, **dict(cfg.adapt_train.algorithm))
+    with open(cfg.load_preadapt_buffer, 'rb') as f:
+            preadapt_data = pickle.load(f)
+    # data_dict = preadapt_data.sample_select(len(preadapt_data), env.actor_labels)
+    
+    distilled_policy, distilled_agent = distill(cfg.distill, env, sac_agent, preadapt_data)
+    env.exit()
+
+
+    ############################################################
+    # Evaluation of distillation agent
+    ############################################################
+
+    env: A1Continual = hydra.utils.instantiate(cfg.pretrain_task_eval)
+    preadapt_stats = evaluate(cfg.eval, env, distilled_policy, nn_normalized_actions=True, obs_processor=obs_to_nn_input, action_processor=action_to_env_input)
+    log.info(f"Distilled policy in original terrain has stats: {preadapt_stats}")
+    env.exit()
 
     ############################################################
     # Exit environment cleanly

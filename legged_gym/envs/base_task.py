@@ -47,6 +47,7 @@ class BaseTask:
         self.num_extra_obs = sum([self.sensor_dims[sensor] for sensor in self.observation_cfg.extra_sensors])
         self.num_actions = 12
         self.history_steps = self.observation_cfg.history_steps
+        self.use_history_for_critic = self.observation_cfg.use_history_for_critic
 
         # optimization flags for pytorch JIT
         torch._C._jit_set_profiling_mode(False)
@@ -56,6 +57,14 @@ class BaseTask:
         self.obs_buf_history = observation_buffer.ObservationBuffer(
             self.num_envs, self.num_obs,
             self.history_steps, self.device)
+        self.critic_obs_buf_history = observation_buffer.ObservationBuffer(
+            self.num_envs, self.num_critic_obs,
+            self.history_steps, self.device
+        )
+        self.extra_obs_buf_history = observation_buffer.ObservationBuffer(
+            self.num_envs, self.num_extra_obs,
+            self.history_steps, self.device
+        )
         self.obs_buf = torch.zeros(self.num_envs, self.num_obs, device=self.device, dtype=torch.float)
         self.rew_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.float)
         self.reset_buf = torch.ones(self.num_envs, device=self.device, dtype=torch.long)

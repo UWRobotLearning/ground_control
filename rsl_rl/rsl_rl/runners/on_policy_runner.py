@@ -50,7 +50,10 @@ class OnPolicyRunner:
         self.current_learning_iteration = 0
 
         num_actor_obs = self.env.num_obs * self.env.history_steps
-        num_critic_obs = num_actor_obs + (self.env.num_critic_obs - self.env.num_obs)
+        if self.env.use_history_for_critic:  ## Uses (sensors + critic_privileged_sensors)*history_steps
+            num_critic_obs = num_actor_obs + (self.env.num_critic_obs - self.env.num_obs)*self.env.history_steps
+        else:  ## Uses sensors*history_steps + critic_privileged_sensors
+            num_critic_obs = num_actor_obs + (self.env.num_critic_obs - self.env.num_obs)
         log.info(f"num_actor_obs = {num_actor_obs}, num_critic_obs = {num_critic_obs}")
         #TODO: address the 'dynamic actor_critic' limitation
         actor_critic = ActorCritic(
@@ -151,6 +154,7 @@ class OnPolicyRunner:
                 for i in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs)
                     obs, critic_obs, rewards, dones, infos, *_ = self.env.step(actions)
+                    import ipdb;ipdb.set_trace()
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
 
